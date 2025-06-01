@@ -286,6 +286,16 @@ template <int dim> void AbstractMultiphysics<dim>::output_results() {
   ctl.statistics.add_value("Time", ctl.time);
   ctl.statistics.set_precision("Time", 8);
   ctl.statistics.set_scientific("Time", true);
+  if (ctl.params.enable_phase_field){
+    double crack_length = GlobalEstimator::sum<dim>("Diffusion JxW", 0.0, ctl);
+    ctl.statistics.add_value("Crack-length", crack_length);
+    ctl.statistics.set_precision("Crack-length", 8);
+    ctl.statistics.set_scientific("Crack-length", true);
+    double max_phi = GlobalEstimator::max<dim>("Phase field", 0.0, ctl);
+    ctl.statistics.add_value("Max-phi", max_phi);
+    ctl.statistics.set_precision("Max-phi", 8);
+    ctl.statistics.set_scientific("Max-phi", true);
+  }
 
   respective_output_results(data_out);
 

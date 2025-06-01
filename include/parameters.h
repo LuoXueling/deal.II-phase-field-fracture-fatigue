@@ -15,6 +15,7 @@ struct Project {
   std::string boundary_from;
   std::string project_name;
   std::string output_dir_top;
+  std::string output_dir_sub;
   std::string load_sequence_from;
   bool enable_phase_field;
   bool enable_fatigue;
@@ -36,6 +37,8 @@ void Project::subsection_declare_parameters(ParameterHandler &prm) {
                       Patterns::FileName(Patterns::FileName::FileType::output));
     prm.declare_entry("Output directory", "../output/",
                       Patterns::FileName(Patterns::FileName::FileType::input));
+    prm.declare_entry("Output sub-directory", "",
+                      Patterns::FileName(Patterns::FileName::FileType::input));
     prm.declare_entry("Load sequence from", "script",
                       Patterns::FileName(Patterns::FileName::FileType::input));
     prm.declare_entry("Enable phase field", "true", Patterns::Bool());
@@ -53,6 +56,7 @@ void Project::subsection_parse_parameters(ParameterHandler &prm) {
     boundary_from = prm.get("Boundary from");
     project_name = prm.get("Project name");
     output_dir_top = prm.get("Output directory");
+    output_dir_sub = prm.get("Output sub-directory");
     load_sequence_from = prm.get("Load sequence from");
     enable_phase_field = prm.get_bool("Enable phase field");
     enable_fatigue = prm.get_bool("Enable fatigue");
@@ -378,17 +382,19 @@ void AllParameters::set_parameters(const std::string &input_file) {
   parse_parameters(prm);
 
   // set output directory
-
-  std::time_t currenttime = std::time(0);
-  char tAll[255];
-  std::strftime(tAll, sizeof(tAll), "%Y-%m-%d-%H-%M-%S",
-                std::localtime(&currenttime));
   std::string stime;
-  std::stringstream strtime;
-  strtime << tAll;
-  stime = strtime.str();
-
-  output_dir = output_dir_top + this->project_name + "-" + stime + "/";
+  if (output_dir_sub.length()==0) {
+    std::time_t currenttime = std::time(0);
+    char tAll[255];
+    std::strftime(tAll, sizeof(tAll), "%Y-%m-%d-%H-%M-%S",
+                  std::localtime(&currenttime));
+    std::stringstream strtime;
+    strtime << tAll;
+    stime = strtime.str();
+    output_dir = output_dir_top + this->project_name + "-" + stime + "/";
+  } else {
+    output_dir = output_dir_top + output_dir_sub + "/";
+  }
 
   param_dir = input_file;
 }
