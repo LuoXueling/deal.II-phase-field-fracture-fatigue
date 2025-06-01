@@ -9,9 +9,12 @@
 #include "dealii_includes.h"
 using namespace dealii;
 
-template <int dim> class FatigueAccumulation {
+template<int dim>
+class FatigueAccumulation {
 public:
-  FatigueAccumulation(Controller<dim> &ctl){};
+  FatigueAccumulation(Controller<dim> &ctl) {
+  };
+
   void step(const std::shared_ptr<PointHistory> &lqph_q, double phasefield,
             double degrade, double degrade_derivative,
             double degrade_second_derivative, Controller<dim> &ctl) {
@@ -42,11 +45,12 @@ public:
   };
 };
 
-template <int dim>
+template<int dim>
 class CarraraNoMeanEffectAccumulation : public FatigueAccumulation<dim> {
 public:
   CarraraNoMeanEffectAccumulation(Controller<dim> &ctl)
-      : FatigueAccumulation<dim>(ctl){};
+    : FatigueAccumulation<dim>(ctl) {
+  };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
@@ -59,11 +63,13 @@ public:
   };
 };
 
-template <int dim>
+template<int dim>
 class KristensenAccumulation : public FatigueAccumulation<dim> {
 public:
   KristensenAccumulation(Controller<dim> &ctl)
-      : FatigueAccumulation<dim>(ctl){};
+    : FatigueAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -74,25 +80,26 @@ public:
   };
 };
 
-template <int dim>
+template<int dim>
 class KristensenCLAAccumulation : public FatigueAccumulation<dim> {
 public:
   KristensenCLAAccumulation(Controller<dim> &ctl)
-      : FatigueAccumulation<dim>(ctl) {
+    : FatigueAccumulation<dim>(ctl) {
     AssertThrow(ctl.params.adaptive_timestep == "KristensenCLA",
                 ExcInternalError("KristensenCLATimeStep must be used "
-                                 "with KristensenCLAAccumulation."));
+                  "with KristensenCLAAccumulation."));
     AssertThrow(
-        ctl.params.fatigue_accumulation_parameters != "",
-        ExcInternalError(
-            "Parameters of KristensenCLAAccumulation is not assigned."));
+      ctl.params.fatigue_accumulation_parameters != "",
+      ExcInternalError(
+        "Parameters of KristensenCLAAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
     iss >> R;
     AssertThrow(
-        R >= 0 || (R < 0 && ctl.params.degradation == "hybridnotension"),
-        ExcInternalError("Cannot use KristensenCLAAccumulation when "
-                         "R<0 while hybridnotension split is not used"));
+      R >= 0 || (R < 0 && ctl.params.degradation == "hybridnotension"),
+      ExcInternalError("Cannot use KristensenCLAAccumulation when "
+        "R<0 while hybridnotension split is not used"));
   };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -112,16 +119,17 @@ public:
   double R;
 };
 
-template <int dim>
+template<int dim>
 class CojocaruAccumulation : public FatigueAccumulation<dim> {
 public:
   CojocaruAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
     AssertThrow(ctl.params.fatigue_accumulation_parameters != "",
                 ExcInternalError(
-                    "Parameters of CojocaruCLAAccumulation is not assigned."));
+                  "Parameters of CojocaruCLAAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
     iss >> R >> q_jump;
   };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -168,14 +176,17 @@ public:
       lqph->update("n_jump_local", n_jump_local);
     }
   }
+
   double R, q_jump;
 };
 
-template <int dim>
+template<int dim>
 class CojocaruCLAAccumulation : public CojocaruAccumulation<dim> {
 public:
   CojocaruCLAAccumulation(Controller<dim> &ctl)
-      : CojocaruAccumulation<dim>(ctl){};
+    : CojocaruAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -202,9 +213,12 @@ public:
   };
 };
 
-template <int dim> class JonasAccumulation : public FatigueAccumulation<dim> {
+template<int dim>
+class JonasAccumulation : public FatigueAccumulation<dim> {
 public:
-  JonasAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl){};
+  JonasAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -238,21 +252,23 @@ public:
     if (std::fmod(subcycle, 1) < 1e-8 && subcycle < 5 && subcycle > 1e-8) {
       // y1, y2, y3, and y4
       lqph->update(
-          "y" + std::to_string(static_cast<unsigned int>(std::round(subcycle))),
-          lqph->get_latest("Fatigue history", 0.0));
+        "y" + std::to_string(static_cast<unsigned int>(std::round(subcycle))),
+        lqph->get_latest("Fatigue history", 0.0));
     }
   }
 };
 
-template <int dim> class JonasCLAAccumulation : public JonasAccumulation<dim> {
+template<int dim>
+class JonasCLAAccumulation : public JonasAccumulation<dim> {
 public:
   JonasCLAAccumulation(Controller<dim> &ctl) : JonasAccumulation<dim>(ctl) {
     AssertThrow(ctl.params.fatigue_accumulation_parameters != "",
                 ExcInternalError(
-                    "Parameters of JonasCLAAccumulation is not assigned."));
+                  "Parameters of JonasCLAAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
     iss >> R;
   };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -287,23 +303,28 @@ public:
   double R;
 };
 
-template <int dim>
+template<int dim>
 class JonasNodegradeAccumulation : public JonasAccumulation<dim> {
 public:
   JonasNodegradeAccumulation(Controller<dim> &ctl)
-      : JonasAccumulation<dim>(ctl){};
+    : JonasAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
     return JonasAccumulation<dim>::increment(
-        lqph, phasefield, ctl.params.constant_k + 1, -2.0, 0.0, ctl);
+      lqph, phasefield, ctl.params.constant_k + 1, -2.0, 0.0, ctl);
   };
 };
 
-template <int dim> class YangAccumulation : public FatigueAccumulation<dim> {
+template<int dim>
+class YangAccumulation : public FatigueAccumulation<dim> {
 public:
-  YangAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl){};
+  YangAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -347,9 +368,12 @@ public:
   }
 };
 
-template <int dim> class JacconAccumulation : public FatigueAccumulation<dim> {
+template<int dim>
+class JacconAccumulation : public FatigueAccumulation<dim> {
 public:
-  JacconAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl){};
+  JacconAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
@@ -371,8 +395,8 @@ public:
       } else {
         double last_increm = lqph->get_independent_initial("increm", 0.0);
         double residual = lqph->get_independent_latest(
-            "Residual", 0.0); // pointhistory is not finalized when it has not
-                              // converged, so we need the latest one.
+          "Residual", 0.0); // pointhistory is not finalized when it has not
+        // converged, so we need the latest one.
         increm = last_increm - (-1) * residual;
       }
       lqph->update_independent("increm", increm);
@@ -410,25 +434,27 @@ public:
   }
 };
 
-template <int dim>
+template<int dim>
 class JacconNodegradeAccumulation : public JacconAccumulation<dim> {
 public:
   JacconNodegradeAccumulation(Controller<dim> &ctl)
-      : JacconAccumulation<dim>(ctl){};
+    : JacconAccumulation<dim>(ctl) {
+  };
+
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
     return JacconAccumulation<dim>::increment(
-        lqph, phasefield, ctl.params.constant_k + 1, -2.0, 0.0, ctl);
+      lqph, phasefield, ctl.params.constant_k + 1, -2.0, 0.0, ctl);
   };
 };
 
-template <int dim>
+template<int dim>
 class CarraraMeanEffectAccumulation : public FatigueAccumulation<dim> {
 public:
   CarraraMeanEffectAccumulation(Controller<dim> &ctl)
-      : FatigueAccumulation<dim>(ctl) {
+    : FatigueAccumulation<dim>(ctl) {
     // Eq. 47 does not match any of alpha_t claimed in the result section
     // We have to multiply another 0.5 to reproduce the results.
     double epsilon_at2 =
@@ -440,7 +466,7 @@ public:
       std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
       iss >> alpha_n;
       ctl.dcout << "Using alpha_n: " << alpha_n << "from configuration"
-                << std::endl;
+          << std::endl;
     }
   };
 
@@ -459,40 +485,43 @@ private:
   double alpha_n;
 };
 
-template <int dim>
-std::unique_ptr<FatigueAccumulation<dim>>
+template<int dim>
+std::unique_ptr<FatigueAccumulation<dim> >
 select_fatigue_accumulation(std::string method, Controller<dim> &ctl) {
   if (method == "CarraraNoMeanEffect")
-    return std::make_unique<CarraraNoMeanEffectAccumulation<dim>>(ctl);
+    return std::make_unique<CarraraNoMeanEffectAccumulation<dim> >(ctl);
   else if (method == "CarraraMeanEffect")
-    return std::make_unique<CarraraMeanEffectAccumulation<dim>>(ctl);
+    return std::make_unique<CarraraMeanEffectAccumulation<dim> >(ctl);
   else if (method == "Kristensen")
-    return std::make_unique<KristensenAccumulation<dim>>(ctl);
+    return std::make_unique<KristensenAccumulation<dim> >(ctl);
   else if (method == "KristensenCLA")
-    return std::make_unique<KristensenCLAAccumulation<dim>>(ctl);
+    return std::make_unique<KristensenCLAAccumulation<dim> >(ctl);
   else if (method == "Cojocaru")
-    return std::make_unique<CojocaruAccumulation<dim>>(ctl);
+    return std::make_unique<CojocaruAccumulation<dim> >(ctl);
   else if (method == "CojocaruCLA")
-    return std::make_unique<CojocaruCLAAccumulation<dim>>(ctl);
+    return std::make_unique<CojocaruCLAAccumulation<dim> >(ctl);
   else if (method == "Jonas")
-    return std::make_unique<JonasAccumulation<dim>>(ctl);
+    return std::make_unique<JonasAccumulation<dim> >(ctl);
   else if (method == "JonasCLA")
-    return std::make_unique<JonasCLAAccumulation<dim>>(ctl);
+    return std::make_unique<JonasCLAAccumulation<dim> >(ctl);
   else if (method == "JonasNodegrade")
-    return std::make_unique<JonasNodegradeAccumulation<dim>>(ctl);
+    return std::make_unique<JonasNodegradeAccumulation<dim> >(ctl);
   else if (method == "Yang")
-    return std::make_unique<YangAccumulation<dim>>(ctl);
+    return std::make_unique<YangAccumulation<dim> >(ctl);
   else if (method == "Jaccon")
-    return std::make_unique<JacconAccumulation<dim>>(ctl);
+    return std::make_unique<JacconAccumulation<dim> >(ctl);
   else if (method == "JacconNodegrade")
-    return std::make_unique<JacconNodegradeAccumulation<dim>>(ctl);
+    return std::make_unique<JacconNodegradeAccumulation<dim> >(ctl);
   else
     AssertThrow(false, ExcNotImplemented());
 }
 
-template <int dim> class FatigueDegradation {
+template<int dim>
+class FatigueDegradation {
 public:
-  FatigueDegradation(Controller<dim> &ctl){};
+  FatigueDegradation(Controller<dim> &ctl) {
+  };
+
   virtual double degradation_value(const std::shared_ptr<PointHistory> &lqph,
                                    double phasefield, double degrade,
                                    Controller<dim> &ctl) {
@@ -501,11 +530,11 @@ public:
 };
 
 // https://www.sciencedirect.com/science/article/pii/S0045782519306218
-template <int dim>
+template<int dim>
 class CarraraAsymptoticFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CarraraAsymptoticFatigueDegradation(Controller<dim> &ctl)
-      : FatigueDegradation<dim>(ctl) {
+    : FatigueDegradation<dim>(ctl) {
     if (ctl.params.fatigue_degradation_parameters == "") {
       // Eq. 47 does not match any of alpha_t claimed in the result section
       // We have to multiply another 0.5 to reproduce the results.
@@ -517,13 +546,13 @@ public:
       std::istringstream iss(ctl.params.fatigue_degradation_parameters);
       iss >> alpha_t;
       ctl.dcout << "Using alpha_t: " << alpha_t << " from configuration"
-                << std::endl;
+          << std::endl;
     }
   };
+
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
                            double phasefield, double phasefield_degrade,
                            Controller<dim> &ctl) override {
-
     double degrade;
     double alpha = lqph->get_latest("Fatigue history", 0.0);
     if (alpha <= alpha_t) {
@@ -538,20 +567,21 @@ public:
 };
 
 // https://www.sciencedirect.com/science/article/pii/S0045782519306218
-template <int dim>
+template<int dim>
 class CarraraLogarithmicFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CarraraLogarithmicFatigueDegradation(Controller<dim> &ctl)
-      : FatigueDegradation<dim>(ctl) {
+    : FatigueDegradation<dim>(ctl) {
     AssertThrow(
-        ctl.params.fatigue_degradation_parameters != "",
-        ExcInternalError("Parameters of CarraraLogarithmicFatigueDegradation "
-                         "is not assigned."));
+      ctl.params.fatigue_degradation_parameters != "",
+      ExcInternalError("Parameters of CarraraLogarithmicFatigueDegradation "
+        "is not assigned."));
     std::istringstream iss(ctl.params.fatigue_degradation_parameters);
     iss >> alpha_t >> kappa;
     ctl.dcout << "Using alpha_t: " << alpha_t << " and kappa: " << kappa
-              << std::endl;
+        << std::endl;
   };
+
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
                            double phasefield, double phasefield_degrade,
                            Controller<dim> &ctl) override {
@@ -570,27 +600,28 @@ public:
   double alpha_t, kappa;
 };
 
-template <int dim>
+template<int dim>
 class KristensenAsymptoticFatigueDegradation
     : public CarraraAsymptoticFatigueDegradation<dim> {
 public:
   KristensenAsymptoticFatigueDegradation(Controller<dim> &ctl)
-      : CarraraAsymptoticFatigueDegradation<dim>(ctl) {
+    : CarraraAsymptoticFatigueDegradation<dim>(ctl) {
     this->alpha_t = ctl.params.Gc / (12 * ctl.params.l_phi);
   };
 };
 
-template <int dim>
+template<int dim>
 class CojocaruAsymptoticFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CojocaruAsymptoticFatigueDegradation(Controller<dim> &ctl)
-      : FatigueDegradation<dim>(ctl) {
+    : FatigueDegradation<dim>(ctl) {
     AssertThrow(ctl.params.fatigue_degradation_parameters != "",
                 ExcInternalError(
-                    "Parameters of CojocaruCLAAccumulation is not assigned."));
+                  "Parameters of CojocaruCLAAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_degradation_parameters);
     iss >> alpha_t;
   };
+
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
                            double phasefield, double phasefield_degrade,
                            Controller<dim> &ctl) override {
@@ -601,17 +632,17 @@ public:
   double alpha_t;
 };
 
-template <int dim>
-std::unique_ptr<FatigueDegradation<dim>>
+template<int dim>
+std::unique_ptr<FatigueDegradation<dim> >
 select_fatigue_degradation(std::string method, Controller<dim> &ctl) {
   if (method == "CarraraAsymptotic")
-    return std::make_unique<CarraraAsymptoticFatigueDegradation<dim>>(ctl);
+    return std::make_unique<CarraraAsymptoticFatigueDegradation<dim> >(ctl);
   else if (method == "CarraraLogarithmic")
-    return std::make_unique<CarraraLogarithmicFatigueDegradation<dim>>(ctl);
+    return std::make_unique<CarraraLogarithmicFatigueDegradation<dim> >(ctl);
   else if (method == "KristensenAsymptotic")
-    return std::make_unique<KristensenAsymptoticFatigueDegradation<dim>>(ctl);
+    return std::make_unique<KristensenAsymptoticFatigueDegradation<dim> >(ctl);
   else if (method == "CojocaruAsymptotic")
-    return std::make_unique<CojocaruAsymptoticFatigueDegradation<dim>>(ctl);
+    return std::make_unique<CojocaruAsymptoticFatigueDegradation<dim> >(ctl);
   else
     AssertThrow(false, ExcNotImplemented());
 }

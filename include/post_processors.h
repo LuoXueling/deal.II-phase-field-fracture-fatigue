@@ -10,7 +10,8 @@
 #include "multi_field.h"
 #include "utils.h"
 
-template <int dim> class CellProcessor {
+template<int dim>
+class CellProcessor {
 public:
   CellProcessor(FESystem<dim> &fe, MultiFieldCfg<dim> &fields,
                 Controller<dim> &ctl);
@@ -19,27 +20,33 @@ public:
                                  MultiFieldCfg<dim> &fields,
                                  DoFHandler<dim> &dof_handler,
                                  Controller<dim> &);
-  std::vector<Vector<double>> evaluate_vector(LA::MPI::BlockVector &solution,
-                                              MultiFieldCfg<dim> &fields,
-                                              DoFHandler<dim> &dof_handler,
-                                              Controller<dim> &);
+
+  std::vector<Vector<double> > evaluate_vector(LA::MPI::BlockVector &solution,
+                                               MultiFieldCfg<dim> &fields,
+                                               DoFHandler<dim> &dof_handler,
+                                               Controller<dim> &);
+
   void add_data_scalar(LA::MPI::BlockVector &solution,
                        MultiFieldCfg<dim> &fields, DataOut<dim> &,
                        DoFHandler<dim> &dof_handler, Controller<dim> &);
+
   void add_data_vector(LA::MPI::BlockVector &solution,
                        MultiFieldCfg<dim> &fields, DataOut<dim> &,
                        DoFHandler<dim> &dof_handler, Controller<dim> &);
+
   virtual unsigned int get_n_components() {
     AssertThrow(false, ExcNotImplemented());
   };
+
   virtual void get_q_scalar_values(
-      Vector<double> &, const std::vector<std::shared_ptr<PointHistory>> &,
-      LA::MPI::BlockVector &, MultiFieldCfg<dim> &fields, Controller<dim> &) {
+    Vector<double> &, const std::vector<std::shared_ptr<PointHistory> > &,
+    LA::MPI::BlockVector &, MultiFieldCfg<dim> &fields, Controller<dim> &) {
     AssertThrow(false, ExcNotImplemented());
   };
+
   virtual void
-  get_q_vector_values(std::vector<Vector<double>> &,
-                      const std::vector<std::shared_ptr<PointHistory>> &,
+  get_q_vector_values(std::vector<Vector<double> > &,
+                      const std::vector<std::shared_ptr<PointHistory> > &,
                       LA::MPI::BlockVector &, MultiFieldCfg<dim> &fields,
                       Controller<dim> &) {
     AssertThrow(false, ExcNotImplemented());
@@ -49,24 +56,25 @@ public:
   FEValues<dim> fe_values;
 };
 
-template <int dim>
+template<int dim>
 CellProcessor<dim>::CellProcessor(FESystem<dim> &fe, MultiFieldCfg<dim> &fields,
                                   Controller<dim> &ctl)
-    : fe_values(fe, ctl.quadrature_formula,
-                update_values | update_gradients | update_quadrature_points |
-                    update_JxW_values) {}
+  : fe_values(fe, ctl.quadrature_formula,
+              update_values | update_gradients | update_quadrature_points |
+              update_JxW_values) {
+}
 
-template <int dim>
+template<int dim>
 Vector<double> CellProcessor<dim>::evaluate_scalar(
-    LA::MPI::BlockVector &solution, MultiFieldCfg<dim> &fields,
-    DoFHandler<dim> &dof_handler, Controller<dim> &ctl) {
+  LA::MPI::BlockVector &solution, MultiFieldCfg<dim> &fields,
+  DoFHandler<dim> &dof_handler, Controller<dim> &ctl) {
   Vector<double> res(ctl.triangulation.n_active_cells());
   Vector<double> q_res(ctl.quadrature_formula.size());
-  for (auto &cell : dof_handler.active_cell_iterators())
+  for (auto &cell: dof_handler.active_cell_iterators())
     if (cell->is_locally_owned()) {
       fe_values.reinit(cell);
       q_res = 0;
-      const std::vector<std::shared_ptr<PointHistory>> lqph =
+      const std::vector<std::shared_ptr<PointHistory> > lqph =
           ctl.quadrature_point_history.get_data(cell);
       get_q_scalar_values(q_res, lqph, solution, fields, ctl);
       res(cell->active_cell_index()) = q_res.mean_value();
@@ -74,22 +82,22 @@ Vector<double> CellProcessor<dim>::evaluate_scalar(
   return res;
 };
 
-template <int dim>
-std::vector<Vector<double>> CellProcessor<dim>::evaluate_vector(
-    LA::MPI::BlockVector &solution, MultiFieldCfg<dim> &fields,
-    DoFHandler<dim> &dof_handler, Controller<dim> &ctl) {
-  std::vector<Vector<double>> res(get_n_components());
+template<int dim>
+std::vector<Vector<double> > CellProcessor<dim>::evaluate_vector(
+  LA::MPI::BlockVector &solution, MultiFieldCfg<dim> &fields,
+  DoFHandler<dim> &dof_handler, Controller<dim> &ctl) {
+  std::vector<Vector<double> > res(get_n_components());
   for (unsigned int j = 0; j < get_n_components(); ++j) {
     res[j].reinit(ctl.triangulation.n_active_cells());
   }
-  std::vector<Vector<double>> q_res(ctl.quadrature_formula.size());
+  std::vector<Vector<double> > q_res(ctl.quadrature_formula.size());
   for (unsigned int j = 0; j < ctl.quadrature_formula.size(); ++j) {
     q_res[j].reinit(get_n_components());
   }
-  for (auto &cell : dof_handler.active_cell_iterators())
+  for (auto &cell: dof_handler.active_cell_iterators())
     if (cell->is_locally_owned()) {
       fe_values.reinit(cell);
-      const std::vector<std::shared_ptr<PointHistory>> lqph =
+      const std::vector<std::shared_ptr<PointHistory> > lqph =
           ctl.quadrature_point_history.get_data(cell);
       for (unsigned int j = 0; j < ctl.quadrature_formula.size(); ++j) {
         q_res[j].reinit(get_n_components());
@@ -105,7 +113,7 @@ std::vector<Vector<double>> CellProcessor<dim>::evaluate_vector(
   return res;
 }
 
-template <int dim>
+template<int dim>
 void CellProcessor<dim>::add_data_scalar(LA::MPI::BlockVector &solution,
                                          MultiFieldCfg<dim> &fields,
                                          DataOut<dim> &data_out,
@@ -115,13 +123,13 @@ void CellProcessor<dim>::add_data_scalar(LA::MPI::BlockVector &solution,
   data_out.add_data_vector(data, get_name());
 }
 
-template <int dim>
+template<int dim>
 void CellProcessor<dim>::add_data_vector(LA::MPI::BlockVector &solution,
                                          MultiFieldCfg<dim> &fields,
                                          DataOut<dim> &data_out,
                                          DoFHandler<dim> &dof_handler,
                                          Controller<dim> &ctl) {
-  std::vector<Vector<double>> data =
+  std::vector<Vector<double> > data =
       evaluate_vector(solution, fields, dof_handler, ctl);
   for (unsigned int i = 0; i < get_n_components(); ++i) {
     data_out.add_data_vector(data[i], get_name() + "_" + std::to_string(i + 1));
@@ -143,7 +151,8 @@ std::string replaceAll(std::string &s_in, const std::string &search,
   return s;
 }
 
-template <int dim> class PointHistoryProcessor : public CellProcessor<dim> {
+template<int dim>
+class PointHistoryProcessor : public CellProcessor<dim> {
 public:
   PointHistoryProcessor(std::string name_in, MultiFieldCfg<dim> &fields,
                         FESystem<dim> &fe_in, Controller<dim> &);
@@ -151,26 +160,28 @@ public:
   std::string name;
 
   void get_q_scalar_values(Vector<double> &,
-                           const std::vector<std::shared_ptr<PointHistory>> &,
+                           const std::vector<std::shared_ptr<PointHistory> > &,
                            LA::MPI::BlockVector &solution,
                            MultiFieldCfg<dim> &fields,
                            Controller<dim> &) override;
+
   std::string get_name() override { return replaceAll(name, " ", "_"); };
 };
 
-template <int dim>
+template<int dim>
 PointHistoryProcessor<dim>::PointHistoryProcessor(std::string name_in,
                                                   MultiFieldCfg<dim> &fields,
                                                   FESystem<dim> &fe_in,
                                                   Controller<dim> &ctl_in)
-    : CellProcessor<dim>(fe_in, fields, ctl_in), name(name_in){};
+  : CellProcessor<dim>(fe_in, fields, ctl_in), name(name_in) {
+};
 
-template <int dim>
+template<int dim>
 void PointHistoryProcessor<dim>::get_q_scalar_values(
-    Vector<double> &data,
-    const std::vector<std::shared_ptr<PointHistory>> &lqph,
-    LA::MPI::BlockVector & /*solution*/, MultiFieldCfg<dim> &fields,
-    Controller<dim> &ctl) {
+  Vector<double> &data,
+  const std::vector<std::shared_ptr<PointHistory> > &lqph,
+  LA::MPI::BlockVector & /*solution*/, MultiFieldCfg<dim> &fields,
+  Controller<dim> &ctl) {
   for (unsigned int q = 0; q < ctl.quadrature_formula.size(); ++q) {
     data[q] = lqph[q]->get_latest(name, 0.0);
   }

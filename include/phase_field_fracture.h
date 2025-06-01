@@ -17,33 +17,45 @@
 #include <iostream>
 using namespace dealii;
 
-template <int dim> class PhaseFieldFracture : public AbstractMultiphysics<dim> {
+template<int dim>
+class PhaseFieldFracture : public AbstractMultiphysics<dim> {
 public:
   explicit PhaseFieldFracture(Parameters::AllParameters &prms);
 
 private:
   void setup_system() override;
+
   bool refine_grid() override;
+
   void record_old_solution() override;
+
   void return_old_solution() override;
+
   void record_checkpoint() override;
+
   void return_checkpoint() override;
+
   double staggered_scheme() override;
+
   double solve_phase_field_subproblem();
+
   double solve_elasticity_subproblem();
+
   void respective_output_results(DataOut<dim> &data_out) override;
 
   Elasticity<dim> elasticity;
   PhaseField<dim> phasefield;
 };
 
-template <int dim>
+template<int dim>
 PhaseFieldFracture<dim>::PhaseFieldFracture(Parameters::AllParameters &prms)
-    : AbstractMultiphysics<dim>(prms),
-      elasticity((this->ctl).params.boundary_from, "newton", this->ctl),
-      phasefield(prms.phase_field_scheme, this->ctl) {}
+  : AbstractMultiphysics<dim>(prms),
+    elasticity((this->ctl).params.boundary_from, "newton", this->ctl),
+    phasefield(prms.phase_field_scheme, this->ctl) {
+}
 
-template <int dim> void PhaseFieldFracture<dim>::setup_system() {
+template<int dim>
+void PhaseFieldFracture<dim>::setup_system() {
   this->ctl.debug_dcout << "Initialize system - elasticity" << std::endl;
   elasticity.setup_system(this->ctl);
   if ((this->ctl).params.enable_phase_field) {
@@ -52,7 +64,8 @@ template <int dim> void PhaseFieldFracture<dim>::setup_system() {
   }
 }
 
-template <int dim> void PhaseFieldFracture<dim>::record_old_solution() {
+template<int dim>
+void PhaseFieldFracture<dim>::record_old_solution() {
   (this->ctl).record_point_history((this->ctl).quadrature_point_history,
                                    (this->ctl).old_quadrature_point_history);
   elasticity.record_old_solution(this->ctl);
@@ -61,7 +74,8 @@ template <int dim> void PhaseFieldFracture<dim>::record_old_solution() {
   }
 }
 
-template <int dim> void PhaseFieldFracture<dim>::return_old_solution() {
+template<int dim>
+void PhaseFieldFracture<dim>::return_old_solution() {
   (this->ctl).record_point_history((this->ctl).old_quadrature_point_history,
                                    (this->ctl).quadrature_point_history);
   elasticity.return_old_solution(this->ctl);
@@ -70,27 +84,29 @@ template <int dim> void PhaseFieldFracture<dim>::return_old_solution() {
   }
 }
 
-template <int dim> void PhaseFieldFracture<dim>::record_checkpoint() {
+template<int dim>
+void PhaseFieldFracture<dim>::record_checkpoint() {
   (this->ctl).record_point_history(
-      (this->ctl).quadrature_point_history,
-      (this->ctl).quadrature_point_history_checkpoint);
+    (this->ctl).quadrature_point_history,
+    (this->ctl).quadrature_point_history_checkpoint);
   elasticity.record_checkpoint(this->ctl);
   if ((this->ctl).params.enable_phase_field) {
     phasefield.record_checkpoint(this->ctl);
   }
 }
 
-template <int dim> void PhaseFieldFracture<dim>::return_checkpoint() {
+template<int dim>
+void PhaseFieldFracture<dim>::return_checkpoint() {
   (this->ctl).record_point_history(
-      (this->ctl).quadrature_point_history_checkpoint,
-      (this->ctl).quadrature_point_history);
+    (this->ctl).quadrature_point_history_checkpoint,
+    (this->ctl).quadrature_point_history);
   elasticity.return_checkpoint(this->ctl);
   if ((this->ctl).params.enable_phase_field) {
     phasefield.return_checkpoint(this->ctl);
   }
 }
 
-template <int dim>
+template<int dim>
 double PhaseFieldFracture<dim>::solve_phase_field_subproblem() {
   (this->ctl).dcout << "Staggered scheme - Solving phase field" << std::endl;
   (this->ctl).computing_timer.enter_subsection("Solve phase field");
@@ -103,7 +119,7 @@ double PhaseFieldFracture<dim>::solve_phase_field_subproblem() {
   return newton_reduction_phasefield;
 }
 
-template <int dim>
+template<int dim>
 double PhaseFieldFracture<dim>::solve_elasticity_subproblem() {
   (this->ctl).dcout
       << "Solve Newton system - staggered scheme - Solving elasticity"
@@ -114,7 +130,8 @@ double PhaseFieldFracture<dim>::solve_elasticity_subproblem() {
   return newton_reduction_elasticity;
 }
 
-template <int dim> double PhaseFieldFracture<dim>::staggered_scheme() {
+template<int dim>
+double PhaseFieldFracture<dim>::staggered_scheme() {
   if ((this->ctl).params.enable_phase_field) {
     double newton_reduction_elasticity = 0, newton_reduction_phasefield = 0;
     double phasefield_residual;
@@ -128,7 +145,7 @@ template <int dim> double PhaseFieldFracture<dim>::staggered_scheme() {
         phasefield_residual =
             get_norm(phasefield.system_rhs, (this->ctl).params.norm_type);
         (this->ctl).dcout << "Phase field residual: " << phasefield_residual
-                          << std::endl;
+            << std::endl;
         if (cnt >= 2 && phasefield_residual < last_residual &&
             last_residual < last_last_residual) {
           residual_decreased = true;
@@ -160,9 +177,9 @@ template <int dim> double PhaseFieldFracture<dim>::staggered_scheme() {
   }
 }
 
-template <int dim>
+template<int dim>
 void PhaseFieldFracture<dim>::respective_output_results(
-    DataOut<dim> &data_out) {
+  DataOut<dim> &data_out) {
   (this->ctl).dcout << "Computing output - elasticity" << std::endl;
   elasticity.output_results(data_out, this->ctl);
   if ((this->ctl).params.enable_phase_field) {
@@ -171,7 +188,8 @@ void PhaseFieldFracture<dim>::respective_output_results(
   }
 }
 
-template <int dim> bool PhaseFieldFracture<dim>::refine_grid() {
+template<int dim>
+bool PhaseFieldFracture<dim>::refine_grid() {
   typename DoFHandler<dim>::active_cell_iterator
       cell = phasefield.dof_handler.begin_active(),
       endc = phasefield.dof_handler.end();
@@ -180,7 +198,7 @@ template <int dim> bool PhaseFieldFracture<dim>::refine_grid() {
                           update_gradients);
 
   unsigned int n_q_points = (this->ctl).quadrature_formula.size();
-  std::vector<Tensor<1, dim>> phasefield_grads(n_q_points);
+  std::vector<Tensor<1, dim> > phasefield_grads(n_q_points);
 
   // Define refinement criterion and mark cells to refine
   unsigned int will_refine = 0;
@@ -190,7 +208,7 @@ template <int dim> bool PhaseFieldFracture<dim>::refine_grid() {
   for (; cell != endc; ++cell) {
     if (cell->is_locally_owned()) {
       if (cell->diameter() < (this->ctl).params.l_phi *
-                                 (this->ctl).params.refine_minimum_size_ratio) {
+          (this->ctl).params.refine_minimum_size_ratio) {
         cell->clear_refine_flag();
         continue;
       }
@@ -219,11 +237,11 @@ template <int dim> bool PhaseFieldFracture<dim>::refine_grid() {
     // Prepare transferring of point history
     parallel::distributed::ContinuousQuadratureDataTransfer<dim, PointHistory>
         point_history_transfer(
-            FE_Q<dim>(QGaussLobatto<1>((this->ctl).params.poly_degree+1)),
-            QGauss<dim>((this->ctl).params.poly_degree + 1),
-            QGauss<dim>((this->ctl).params.poly_degree + 1));
+          FE_Q<dim>(QGaussLobatto<1>((this->ctl).params.poly_degree + 1)),
+          QGauss<dim>((this->ctl).params.poly_degree + 1),
+          QGauss<dim>((this->ctl).params.poly_degree + 1));
     point_history_transfer.prepare_for_coarsening_and_refinement(
-        (this->ctl).triangulation, (this->ctl).quadrature_point_history);
+      (this->ctl).triangulation, (this->ctl).quadrature_point_history);
 
     // Prepare transferring of fields
     parallel::distributed::SolutionTransfer<dim, LA::MPI::BlockVector>
@@ -237,12 +255,12 @@ template <int dim> bool PhaseFieldFracture<dim>::refine_grid() {
     setup_system();
 
     (this->ctl).debug_dcout << "Refine - after refinement - point history"
-                            << std::endl;
+        << std::endl;
     // Finalize transferring of point history
     (this->ctl).initialize_point_history();
     point_history_transfer.interpolate();
     (this->ctl).debug_dcout << "Refine - after refinement - transfer fields"
-                            << std::endl;
+        << std::endl;
     // Finalize transferring of fields
     elasticity.post_refine(soltrans_elasticity, this->ctl);
     phasefield.post_refine(soltrans_phasefield, this->ctl);

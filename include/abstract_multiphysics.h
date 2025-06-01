@@ -17,51 +17,60 @@
 #include <iostream>
 using namespace dealii;
 
-template <int dim> class AbstractMultiphysics {
+template<int dim>
+class AbstractMultiphysics {
 public:
   explicit AbstractMultiphysics(Parameters::AllParameters &prms);
 
   void run();
+
   Controller<dim> ctl;
 
 private:
   virtual void setup_system() { AssertThrow(false, ExcNotImplemented()); };
   virtual bool refine_grid() { AssertThrow(false, ExcNotImplemented()); };
+
   virtual void record_old_solution() {
     AssertThrow(false, ExcNotImplemented());
   };
+
   virtual void return_old_solution() {
     AssertThrow(false, ExcNotImplemented());
   };
   virtual void record_checkpoint() { AssertThrow(false, ExcNotImplemented()); };
   virtual void return_checkpoint() { AssertThrow(false, ExcNotImplemented()); };
+
   virtual double staggered_scheme() {
     AssertThrow(false, ExcNotImplemented());
   };
+
   virtual void respective_output_results(DataOut<dim> &data_out) {
     AssertThrow(false, ExcNotImplemented());
   };
 
   void setup_mesh();
+
   void output_results();
 };
 
-template <int dim>
+template<int dim>
 AbstractMultiphysics<dim>::AbstractMultiphysics(Parameters::AllParameters &prms)
-    : ctl(prms) {}
+  : ctl(prms) {
+}
 
-template <int dim> void AbstractMultiphysics<dim>::run() {
+template<int dim>
+void AbstractMultiphysics<dim>::run() {
   ctl.dcout << "Project: " << ctl.params.project_name << std::endl;
   ctl.dcout << "Mesh from: " << ctl.params.mesh_from << std::endl;
   ctl.dcout << "Load sequence from: " << ctl.params.load_sequence_from
-            << std::endl;
+      << std::endl;
   ctl.dcout << "Output directory: " << ctl.params.output_dir << std::endl;
   ctl.dcout << "Solving " << ctl.params.dim << " dimensional PFM problem"
-            << std::endl;
+      << std::endl;
   ctl.dcout << "Running on " << Utilities::MPI::n_mpi_processes(ctl.mpi_com)
-            << " MPI rank(s)" << std::endl;
+      << " MPI rank(s)" << std::endl;
   ctl.dcout << "Number of threads " << MultithreadInfo::n_threads()
-            << std::endl;
+      << std::endl;
   ctl.dcout << "Number of cores " << MultithreadInfo::n_cores() << std::endl;
 
   ctl.dcout << "Set mesh" << std::endl;
@@ -85,7 +94,7 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
   double finishing_timestep_loop = 0;
   double tmp_timestep = 0.0;
 
-  std::unique_ptr<AdaptiveTimeStep<dim>> time_stepping =
+  std::unique_ptr<AdaptiveTimeStep<dim> > time_stepping =
       select_adaptive_timestep<dim>(ctl.params.adaptive_timestep, ctl);
 
   time_stepping->initialize_timestep(ctl);
@@ -104,16 +113,16 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
       ctl.current_timestep = 0.0;
 
     ctl.dcout << "\n=============================="
-              << "===========================================" << std::endl;
+        << "===========================================" << std::endl;
 
     double current_timestep = time_stepping->get_timestep(ctl);
     ctl.time += current_timestep;
 
     ctl.dcout << "Time (No." << ctl.timestep_number << "): " << ctl.time
-              << " (Step: " << current_timestep << ") "
-              << "Cells: " << ctl.triangulation.n_global_active_cells();
+        << " (Step: " << current_timestep << ") "
+        << "Cells: " << ctl.triangulation.n_global_active_cells();
     ctl.dcout << "\n--------------------------------"
-              << "-----------------------------------------" << std::endl;
+        << "-----------------------------------------" << std::endl;
     ctl.dcout << std::endl;
 
     try {
@@ -125,7 +134,7 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
         record_old_solution();
         try {
           ctl.debug_dcout << "Solve Newton system - staggered scheme"
-                          << std::endl;
+              << std::endl;
           newton_reduction = staggered_scheme();
           while (time_stepping->fail(newton_reduction, ctl)) {
             time_stepping->execute_when_fail(ctl);
@@ -142,10 +151,9 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
           }
 
           break;
-
         } catch (SolverControl::NoConvergence &e) {
           ctl.dcout << "Solver did not converge! Adjusting time step."
-                    << std::endl;
+              << std::endl;
           time_stepping->fail(1e8, ctl);
           time_stepping->execute_when_fail(ctl);
           std::string solution_or_checkpoint =
@@ -191,7 +199,7 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
       time_stepping->save_results = false;
       ctl.timer.enter_subsection("Calculate outputs");
       ctl.dcout << "Computing output (will be saved to No."
-                << ctl.output_timestep_number << ")" << std::endl;
+          << ctl.output_timestep_number << ")" << std::endl;
       ctl.computing_timer.enter_subsection("Calculate outputs");
       output_results();
       ctl.computing_timer.leave_subsection("Calculate outputs");
@@ -209,7 +217,8 @@ template <int dim> void AbstractMultiphysics<dim>::run() {
   ctl.timer.print_summary();
 }
 
-template <int dim> void AbstractMultiphysics<dim>::setup_mesh() {
+template<int dim>
+void AbstractMultiphysics<dim>::setup_mesh() {
   GridIn<dim> grid_in;
   /**
    * similar to normal use of GridIn.
@@ -234,24 +243,24 @@ template <int dim> void AbstractMultiphysics<dim>::setup_mesh() {
   }
 
   std::vector<int> boundary_ids;
-  std::tuple<std::vector<Point<dim>>, std::vector<CellData<dim>>, SubCellData>
+  std::tuple<std::vector<Point<dim> >, std::vector<CellData<dim> >, SubCellData>
       info;
   info = GridTools::get_coarse_mesh_description(ctl.triangulation);
   ctl.debug_dcout << "Searching boundaries" << std::endl;
   if (dim == 2) {
-    for (const CellData<1> i : std::get<2>(info).boundary_lines) {
+    for (const CellData<1> i: std::get<2>(info).boundary_lines) {
       int id = i.boundary_id;
       if (id == 0 || id == -1)
         continue;
       if (std::find(boundary_ids.begin(), boundary_ids.end(), id) ==
-              boundary_ids.end() &&
+          boundary_ids.end() &&
           id != -1 && id != 0) {
         ctl.debug_dcout << "Find id" + std::to_string(id) << std::endl;
         boundary_ids.push_back(id);
       }
     }
   } else {
-    for (const CellData<2> i : std::get<2>(info).boundary_quads) {
+    for (const CellData<2> i: std::get<2>(info).boundary_quads) {
       int id = i.boundary_id;
       if (id == 0 || id == -1)
         continue;
@@ -264,10 +273,11 @@ template <int dim> void AbstractMultiphysics<dim>::setup_mesh() {
   }
   ctl.boundary_ids = boundary_ids;
   ctl.dcout << "Find " << ctl.triangulation.n_global_active_cells()
-            << " elements" << std::endl;
+      << " elements" << std::endl;
 }
 
-template <int dim> void AbstractMultiphysics<dim>::output_results() {
+template<int dim>
+void AbstractMultiphysics<dim>::output_results() {
   DataOut<dim> data_out;
   data_out.attach_triangulation(ctl.triangulation);
 
@@ -286,7 +296,7 @@ template <int dim> void AbstractMultiphysics<dim>::output_results() {
   ctl.statistics.add_value("Time", ctl.time);
   ctl.statistics.set_precision("Time", 8);
   ctl.statistics.set_scientific("Time", true);
-  if (ctl.params.enable_phase_field){
+  if (ctl.params.enable_phase_field) {
     double crack_length = GlobalEstimator::sum<dim>("Diffusion JxW", 0.0, ctl);
     ctl.statistics.add_value("Crack-length", crack_length);
     ctl.statistics.set_precision("Crack-length", 8);
@@ -309,7 +319,7 @@ template <int dim> void AbstractMultiphysics<dim>::output_results() {
   ctl.debug_dcout << "Computing output - report statistics" << std::endl;
   if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
     std::ofstream stat_file(
-        (ctl.params.output_dir + "/log-results.txt").c_str());
+      (ctl.params.output_dir + "/log-results.txt").c_str());
     ctl.statistics.write_text(stat_file);
     stat_file.close();
   }

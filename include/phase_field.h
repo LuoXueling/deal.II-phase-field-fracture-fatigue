@@ -17,28 +17,32 @@
 #include <iostream>
 using namespace dealii;
 
-template <int dim> class PhaseField : public AbstractField<dim> {
+template<int dim>
+class PhaseField : public AbstractField<dim> {
 public:
   PhaseField(std::string update_scheme, Controller<dim> &ctl);
+
   void assemble_newton_system(bool residual_only,
                               LA::MPI::BlockVector &neumann_rhs,
                               Controller<dim> &ctl) override;
+
   void assemble_linear_system(Controller<dim> &ctl) override;
+
   void output_results(DataOut<dim> &data_out, Controller<dim> &ctl) override;
 
   void enforce_phase_field_limitation(Controller<dim> &ctl);
 
-  std::unique_ptr<Degradation<dim>> degradation;
-  std::unique_ptr<FatigueDegradation<dim>> fatigue_degradation;
-  std::unique_ptr<FatigueAccumulation<dim>> fatigue_accumulation;
+  std::unique_ptr<Degradation<dim> > degradation;
+  std::unique_ptr<FatigueDegradation<dim> > fatigue_degradation;
+  std::unique_ptr<FatigueAccumulation<dim> > fatigue_accumulation;
 };
 
-template <int dim>
+template<int dim>
 PhaseField<dim>::PhaseField(std::string update_scheme, Controller<dim> &ctl)
-    : AbstractField<dim>(std::vector<unsigned int>(1, 1),
-                         std::vector<std::string>(1, "phasefield"),
-                         std::vector<std::string>(1, "none"), update_scheme,
-                         ctl) {
+  : AbstractField<dim>(std::vector<unsigned int>(1, 1),
+                       std::vector<std::string>(1, "phasefield"),
+                       std::vector<std::string>(1, "none"), update_scheme,
+                       ctl) {
   degradation = select_degradation<dim>(ctl.params.degradation);
   fatigue_degradation =
       select_fatigue_degradation<dim>(ctl.params.fatigue_degradation, ctl);
@@ -46,7 +50,7 @@ PhaseField<dim>::PhaseField(std::string update_scheme, Controller<dim> &ctl)
       select_fatigue_accumulation<dim>(ctl.params.fatigue_accumulation, ctl);
 }
 
-template <int dim>
+template<int dim>
 void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
   (this->system_rhs).block(this->block_id("phasefield")) = 0;
   (this->system_matrix)
@@ -54,7 +58,7 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
 
   FEValues<dim> fe_values((this->fe), ctl.quadrature_formula,
                           update_values | update_gradients |
-                              update_quadrature_points | update_JxW_values);
+                          update_quadrature_points | update_JxW_values);
 
   const unsigned int dofs_per_cell = (this->fe).n_dofs_per_cell();
   const unsigned int n_q_points = ctl.quadrature_formula.size();
@@ -70,23 +74,23 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
   // Old Newton values
   std::vector<double> old_phasefield_values(n_q_points);
   // Old Newton grads
-  std::vector<Tensor<1, dim>> old_phasefield_grads(n_q_points);
+  std::vector<Tensor<1, dim> > old_phasefield_grads(n_q_points);
 
   std::vector<double> Nphi_kq(dofs_per_cell);
-  std::vector<Tensor<1, dim>> Bphi_kq(dofs_per_cell);
+  std::vector<Tensor<1, dim> > Bphi_kq(dofs_per_cell);
 
   if (ctl.params.degradation != "quadratic") {
     AssertThrow(false,
                 ExcInternalError("Cannot solve linear equations for phase "
-                                 "field when degradation is not quadratic."))
+                  "field when degradation is not quadratic."))
   }
   if (ctl.params.enable_fatigue) {
     AssertThrow(false,
                 ExcInternalError("Cannot solve linear equations for phase "
-                                 "field when fatigue is activated."))
+                  "field when fatigue is activated."))
   }
 
-  for (const auto &cell : (this->dof_handler).active_cell_iterators())
+  for (const auto &cell: (this->dof_handler).active_cell_iterators())
     if (cell->is_locally_owned()) {
       cell_matrix = 0;
       cell_rhs = 0;
@@ -99,7 +103,7 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
                                                   old_phasefield_grads);
 
       // Get history
-      const std::vector<std::shared_ptr<PointHistory>> lqph =
+      const std::vector<std::shared_ptr<PointHistory> > lqph =
           ctl.quadrature_point_history.get_data(cell);
       for (unsigned int q = 0; q < n_q_points; ++q) {
         double H = lqph[q]->get_latest("Driving force", 0.0);
@@ -121,8 +125,8 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
             if (ctl.params.phasefield_model == "AT1") {
               cell_matrix(i, j) += (Nphi_kq[i] * Nphi_kq[j] * 2 * H +
                                     Bphi_kq[i] * Bphi_kq[j] * ctl.params.Gc *
-                                        ctl.params.l_phi * 0.75) *
-                                   fe_values.JxW(q);
+                                    ctl.params.l_phi * 0.75) *
+                  fe_values.JxW(q);
             } else if (ctl.params.phasefield_model == "AT2") {
               cell_matrix(i, j) +=
                   (Nphi_kq[i] * Nphi_kq[j] * 2 * H +
@@ -131,14 +135,14 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
                   fe_values.JxW(q);
             } else {
               AssertThrow(
-                  false, ExcNotImplemented("Phase field model not available."));
+                false, ExcNotImplemented("Phase field model not available."));
             }
           }
           if (ctl.params.phasefield_model == "AT1") {
             cell_rhs(i) += (Nphi_kq[i] * Mbracket(-3.0 / 8 * ctl.params.Gc /
-                                                      ctl.params.l_phi +
+                                                  ctl.params.l_phi +
                                                   2 * H)) *
-                           fe_values.JxW(q);
+                fe_values.JxW(q);
           } else if (ctl.params.phasefield_model == "AT2") {
             cell_rhs(i) += (Nphi_kq[i] * Mbracket(2 * H)) * fe_values.JxW(q);
           } else {
@@ -161,7 +165,7 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
   (this->system_rhs).compress(VectorOperation::add);
 }
 
-template <int dim>
+template<int dim>
 void PhaseField<dim>::assemble_newton_system(bool residual_only,
                                              LA::MPI::BlockVector &neumann_rhs,
                                              Controller<dim> &ctl) {
@@ -173,7 +177,7 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
 
   FEValues<dim> fe_values((this->fe), ctl.quadrature_formula,
                           update_values | update_gradients |
-                              update_quadrature_points | update_JxW_values);
+                          update_quadrature_points | update_JxW_values);
 
   const unsigned int dofs_per_cell = (this->fe).n_dofs_per_cell();
   const unsigned int n_q_points = ctl.quadrature_formula.size();
@@ -189,12 +193,12 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
   // Old Newton values
   std::vector<double> old_phasefield_values(n_q_points);
   // Old Newton grads
-  std::vector<Tensor<1, dim>> old_phasefield_grads(n_q_points);
+  std::vector<Tensor<1, dim> > old_phasefield_grads(n_q_points);
 
   std::vector<double> Nphi_kq(dofs_per_cell);
-  std::vector<Tensor<1, dim>> Bphi_kq(dofs_per_cell);
+  std::vector<Tensor<1, dim> > Bphi_kq(dofs_per_cell);
 
-  for (const auto &cell : (this->dof_handler).active_cell_iterators())
+  for (const auto &cell: (this->dof_handler).active_cell_iterators())
     if (cell->is_locally_owned()) {
       cell_matrix = 0;
       cell_rhs = 0;
@@ -206,7 +210,7 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
       fe_values[extractor].get_function_gradients((this->solution),
                                                   old_phasefield_grads);
       // Get history
-      const std::vector<std::shared_ptr<PointHistory>> lqph =
+      const std::vector<std::shared_ptr<PointHistory> > lqph =
           ctl.quadrature_point_history.get_data(cell);
 
       for (unsigned int q = 0; q < n_q_points; ++q) {
@@ -241,11 +245,11 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
                       ExcNotImplemented("Phase field model not available."));
         }
         lqph[q]->update(
-            "Diffusion JxW",
-            1 / (4 * cw) *
-                (w0 / ctl.params.l_phi +
-                 ctl.params.l_phi * old_phasefield_grads[q].norm_square()) *
-                fe_values.JxW(q));
+          "Diffusion JxW",
+          1 / (4 * cw) *
+          (w0 / ctl.params.l_phi +
+           ctl.params.l_phi * old_phasefield_grads[q].norm_square()) *
+          fe_values.JxW(q));
 
         double fatigue_degrade, fatigue_degrade_derivative;
         Tensor<1, dim> fatigue_degrade_grad;
@@ -254,7 +258,7 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
                                      degrade_derivative,
                                      degrade_second_derivative, ctl);
           fatigue_degrade = fatigue_degradation->degradation_value(
-              lqph[q], old_phasefield_values[q], degrade, ctl);
+            lqph[q], old_phasefield_values[q], degrade, ctl);
         } else {
           fatigue_degrade = 1.0;
           fatigue_degrade_derivative = 0.0;
@@ -262,7 +266,7 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
 
         if (ctl.params.phasefield_model == "AT1") {
           H = std::max(H, 3.0 * ctl.params.Gc / (16.0 * ctl.params.l_phi) *
-                              fatigue_degrade);
+                          fatigue_degrade);
         }
 
         for (unsigned int i = 0; i < dofs_per_cell; ++i) {
@@ -273,15 +277,14 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
             for (unsigned int j = 0; j < dofs_per_cell; ++j) {
               if (!this->dof_is_this_field(j, "phasefield")) {
                 continue;
-              }
-              {
+              } {
                 cell_matrix(i, j) +=
                     (ctl.params.Gc / (2 * cw) * fatigue_degrade *
-                         ctl.params.l_phi * Bphi_kq[i] * Bphi_kq[j] +
+                     ctl.params.l_phi * Bphi_kq[i] * Bphi_kq[j] +
                      Nphi_kq[i] * Nphi_kq[j] *
-                         (degrade_second_derivative * H +
-                          ctl.params.Gc / (2 * cw) * fatigue_degrade /
-                              (2 * ctl.params.l_phi) * w2)) *
+                     (degrade_second_derivative * H +
+                      ctl.params.Gc / (2 * cw) * fatigue_degrade /
+                      (2 * ctl.params.l_phi) * w2)) *
                     fe_values.JxW(q);
               }
             }
@@ -289,11 +292,11 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
 
           cell_rhs(i) += (degrade_derivative * H * Nphi_kq[i] +
                           ctl.params.Gc / (2 * cw) *
-                              (fatigue_degrade * ctl.params.l_phi *
-                                   old_phasefield_grads[q] * Bphi_kq[i] +
-                               fatigue_degrade / (2 * ctl.params.l_phi) * w1 *
-                                   Nphi_kq[i])) *
-                         fe_values.JxW(q);
+                          (fatigue_degrade * ctl.params.l_phi *
+                           old_phasefield_grads[q] * Bphi_kq[i] +
+                           fatigue_degrade / (2 * ctl.params.l_phi) * w1 *
+                           Nphi_kq[i])) *
+              fe_values.JxW(q);
         }
       }
 
@@ -316,12 +319,12 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
   (this->system_rhs).compress(VectorOperation::add);
 }
 
-template <int dim>
+template<int dim>
 void PhaseField<dim>::output_results(DataOut<dim> &data_out,
                                      Controller<dim> &ctl) {
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
       data_component_interpretation(
-          1, DataComponentInterpretation::component_is_scalar);
+        1, DataComponentInterpretation::component_is_scalar);
   data_out.add_data_vector((this->dof_handler),
                            (this->solution).block(this->block_id("phasefield")),
                            std::vector<std::string>(1, "Phase_field"),
@@ -338,18 +341,18 @@ void PhaseField<dim>::output_results(DataOut<dim> &data_out,
   }
 }
 
-template <int dim>
+template<int dim>
 void PhaseField<dim>::enforce_phase_field_limitation(Controller<dim> &ctl) {
   typename DoFHandler<dim>::active_cell_iterator cell = (this->dof_handler)
-                                                            .begin_active(),
-                                                 endc =
-                                                     (this->dof_handler).end();
+          .begin_active(),
+      endc =
+          (this->dof_handler).end();
 
   LA::MPI::BlockVector distributed_solution(this->fields_locally_owned_dofs);
   distributed_solution = this->solution;
 
   std::vector<types::global_dof_index> local_dof_indices(
-      (this->fe).dofs_per_cell);
+    (this->fe).dofs_per_cell);
   for (; cell != endc; ++cell)
     if (cell->is_locally_owned()) {
       cell->get_dof_indices(local_dof_indices);
@@ -362,7 +365,7 @@ void PhaseField<dim>::enforce_phase_field_limitation(Controller<dim> &ctl) {
           continue;
 
         distributed_solution(idx) = std::max(
-            0.0, std::min(static_cast<double>((this->solution)(idx)), 1.0));
+          0.0, std::min(static_cast<double>((this->solution)(idx)), 1.0));
       }
     }
 

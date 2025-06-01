@@ -15,10 +15,12 @@ using namespace dealii;
  * @refitem tjhei/cracks
  *
  */
-template <int dim> struct MultiFieldCfg {
+template<int dim>
+struct MultiFieldCfg {
   MultiFieldCfg(std::vector<unsigned int> n_components,
                 std::vector<std::string> names,
                 std::vector<std::string> boundary_from, Controller<dim> &ctl);
+
   void define_boundary_condition(const std::string boundary_from,
                                  const std::string name);
 
@@ -39,21 +41,21 @@ template <int dim> struct MultiFieldCfg {
   std::vector<std::string> names;
 
   std::map<std::string,
-           std::vector<std::tuple<unsigned int, std::string, unsigned int,
-                                  double, std::vector<double>>>>
-      dirichlet_boundary_info;
+    std::vector<std::tuple<unsigned int, std::string, unsigned int,
+      double, std::vector<double> > > >
+  dirichlet_boundary_info;
   std::map<std::string,
-           std::vector<std::tuple<unsigned int, std::string,
-                                  std::vector<double>, std::vector<double>>>>
-      neumann_boundary_info;
+    std::vector<std::tuple<unsigned int, std::string,
+      std::vector<double>, std::vector<double> > > >
+  neumann_boundary_info;
 };
 
-template <int dim>
+template<int dim>
 MultiFieldCfg<dim>::MultiFieldCfg(std::vector<unsigned int> n_components_list,
                                   std::vector<std::string> names_in,
                                   std::vector<std::string> boundary_from,
                                   Controller<dim> &ctl)
-    : n_components(0), n_fields(n_components_list.size()), names(names_in) {
+  : n_components(0), n_fields(n_components_list.size()), names(names_in) {
   n_blocks = (ctl.params.direct_solver) ? 1 : n_fields;
   for (unsigned int i_field = 0; i_field < n_components_list.size();
        ++i_field) {
@@ -69,7 +71,7 @@ MultiFieldCfg<dim>::MultiFieldCfg(std::vector<unsigned int> n_components_list,
     unsigned int n_component = n_components_list[i_field];
     std::string name = names[i_field];
     FE_Q_sequence.push_back(
-        new FE_Q<dim>(QGaussLobatto<1>(ctl.params.poly_degree + 1)));
+      new FE_Q<dim>(QGaussLobatto<1>(ctl.params.poly_degree + 1)));
     FE_Q_dim_sequence.push_back(n_component);
 
     component_start_indices[name] = processed_components;
@@ -86,7 +88,7 @@ MultiFieldCfg<dim>::MultiFieldCfg(std::vector<unsigned int> n_components_list,
       component_masks[name + "_" + std::to_string(i_comp)] =
           ComponentMask(n_components, false);
       component_masks[name + "_" + std::to_string(i_comp)].set(
-          processed_components + i_comp, true);
+        processed_components + i_comp, true);
       component_masks[name].set(processed_components + i_comp, true);
       if (!ctl.params.direct_solver) {
         components_to_blocks[processed_components + i_comp] = i_field;
@@ -99,9 +101,9 @@ MultiFieldCfg<dim>::MultiFieldCfg(std::vector<unsigned int> n_components_list,
   }
 }
 
-template <int dim>
+template<int dim>
 void MultiFieldCfg<dim>::define_boundary_condition(
-    const std::string boundary_from, const std::string name) {
+  const std::string boundary_from, const std::string name) {
   if (boundary_from == "none") {
     return;
   }
@@ -134,7 +136,7 @@ void MultiFieldCfg<dim>::define_boundary_condition(
           } while (!iss.eof());
         }
         std::tuple<unsigned int, std::string, unsigned int, double,
-                   std::vector<double>>
+              std::vector<double> >
             info(boundary_id, constraint_type, constrained_dof,
                  constraint_value, additional_info);
         dirichlet_boundary_info[name].push_back(info);
@@ -154,7 +156,7 @@ void MultiFieldCfg<dim>::define_boundary_condition(
           }
         } while (!iss.eof());
         std::tuple<unsigned int, std::string, std::vector<double>,
-                   std::vector<double>>
+              std::vector<double> >
             info(boundary_id, constraint_type, constraint_vector,
                  additional_info);
         neumann_boundary_info[name].push_back(info);
@@ -166,11 +168,13 @@ void MultiFieldCfg<dim>::define_boundary_condition(
   }
 }
 
-template <class Preconditioner> class BlockDiagonalPreconditioner {
+template<class Preconditioner>
+class BlockDiagonalPreconditioner {
 public:
   BlockDiagonalPreconditioner(
-      const std::vector<std::shared_ptr<Preconditioner>> &preconditioners)
-      : prec(preconditioners) {}
+    const std::vector<std::shared_ptr<Preconditioner> > &preconditioners)
+    : prec(preconditioners) {
+  }
 
   void vmult(LA::MPI::BlockVector &dst, const LA::MPI::BlockVector &src) const {
     for (unsigned int i = 0; i < prec.size(); ++i) {
@@ -178,7 +182,7 @@ public:
     }
   }
 
-  const std::vector<std::shared_ptr<Preconditioner>> &prec;
+  const std::vector<std::shared_ptr<Preconditioner> > &prec;
 };
 
 #endif
