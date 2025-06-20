@@ -204,9 +204,9 @@ class CojocaruCycleJump : public ConstantTimeStep<dim> {
 public:
   CojocaruCycleJump(Controller<dim> &ctl)
     : ConstantTimeStep<dim>(ctl), subcycle(0), n_jump(0) {
-    if (ctl.params.fatigue_accumulation != "CojocaruCLA") {
+    if (ctl.params.fatigue_accumulation != "CojocaruCLA" && ctl.params.fatigue_accumulation != "Cojocaru") {
       ctl.dcout << "CojocaruCycleJump is expected to used with "
-          "CojocaruCLAAccumulation, but it's not. Please make sure "
+          "CojocaruCLAAccumulation or CojocaruAccumulation, but it's not. Please make sure "
           "that the accumulation rule is consistent with constant "
           "amplitude accumulation with cycle jumping support."
           << std::endl;
@@ -298,6 +298,113 @@ public:
   unsigned int n_jump;
   unsigned int expected_cycles;
 };
+
+/*
+ * CMAME (2025) 118074 by Jiawei Li et al.
+ * This implementation is very similar to that of Cojocaru's approach
+ */
+template<int dim>
+class LiCycleJump : public ConstantTimeStep<dim> {
+public:
+  LiCycleJump(Controller<dim> &ctl)
+    : ConstantTimeStep<dim>(ctl), subcycle(0), n_jump(0) {
+    if (ctl.params.fatigue_accumulation != "LiCLA" && ctl.params.fatigue_accumulation != "Li") {
+      ctl.dcout << "LiCycleJump is expected to used with "
+          "LiCLAAccumulation or LiAccumulation, but it's not. Please make sure "
+          "that the accumulation rule is consistent with constant "
+          "amplitude accumulation with cycle jumping support."
+          << std::endl;
+    }
+    AssertThrow(
+      ctl.params.adaptive_timestep_parameters != "",
+      ExcInternalError("Parameters of LiCycleJump is not assigned."));
+    std::istringstream iss(ctl.params.adaptive_timestep_parameters);
+    iss >> R >> f >> max_jumps;
+    T = 1 / f;
+    AssertThrow(ctl.params.timestep * ctl.params.switch_timestep == 0.25 * T,
+                ExcInternalError("The initial timestep has to be switched when "
+                  "reaching a quarter of a cycle."));
+    ctl.set_info("N jump", n_jump);
+    ctl.set_info("Maximum jump", max_jumps);
+    subcycle = 1 - ctl.params.timestep_size_2 / T;
+    expected_cycles =
+        std::round((ctl.params.timestep * (ctl.params.switch_timestep) +
+                    ctl.params.timestep_size_2 * (ctl.params.max_no_timesteps -
+                                                  ctl.params.switch_timestep)) /
+                   T);
+  };
+
+  void initialize_timestep(Controller<dim> &ctl) {
+    ctl.dcout << "LiCycleJump using parameter: R=" << R << ", f=" << f
+        << "Hz" << std::endl;
+    ctl.params.save_vtk_per_step = 1e10;
+    ctl.dcout << "LiCycleJump disables periodical outputs. Instead, it will "
+        "save after each cycle jump."
+        << std::endl;
+    ctl.params.skip_first_iter = false;
+    ctl.dcout <<
+        "LiCycleJump does not allow skipping the first Newton iteration even if the residual is below the threshold."
+        << std::endl;
+  }
+
+  double current_timestep(Controller<dim> &ctl) override {
+    if (ctl.current_timestep != ctl.params.timestep_size_2)
+      return ctl.current_timestep;
+    double timestep = 0.0;
+    if (subcycle < 4) {
+      n_jump = 0;
+      ctl.set_info("N jump", n_jump);
+      timestep = ctl.current_timestep;
+    } else if (std::abs(subcycle - 4) < 1e-8) {
+      double n_jump_temp =
+          GlobalEstimator::min<dim>("n_jump_local", 1, ctl);
+
+      n_jump = std::max(static_cast<unsigned int>(std::floor(n_jump_temp)), static_cast<unsigned int>(1));
+      ctl.set_info("N jump", n_jump);
+      ctl.dcout << "Doing cycle jumping in this timestep: jumping " << n_jump
+          << " cycles" << std::endl;
+      timestep = T * n_jump;
+    } else {
+      timestep = ctl.current_timestep;
+    }
+    if (std::abs(subcycle - 4) < 1e-8) {
+      subcycle = 1;
+    } else {
+      subcycle += ctl.current_timestep / T;
+    }
+    ctl.set_info("Subcycle", subcycle);
+    ctl.dcout << "Current subcycle: " << subcycle << std::endl;
+    return timestep;
+  }
+
+  void after_step(Controller<dim> &ctl) {
+    if (n_jump > 0) {
+      subcycle = 1;
+      ctl.output_timestep_number += n_jump - 1;
+      this->save_results = true;
+    } else {
+      ctl.output_timestep_number += (std::fmod(subcycle, 1) < 1e-8) ? 0 : (-1);
+    }
+  }
+
+  bool terminate(Controller<dim> &ctl) override {
+    if (ctl.time / T >= expected_cycles) {
+      ctl.dcout << "Terminating as the number of cycles reaches the expected "
+          "number (Max no of timestep in the configuration)."
+          << std::endl;
+      return true;
+    } else {
+      return AdaptiveTimeStep<dim>::terminate(ctl);
+    }
+  }
+
+  double R, f, T;
+  double subcycle;
+  unsigned int max_jumps;
+  unsigned int n_jump;
+  unsigned int expected_cycles;
+};
+
 
 /*
  * arXiv:2404.07003v1
@@ -1220,6 +1327,8 @@ select_adaptive_timestep(std::string method, Controller<dim> &ctl) {
     return std::make_unique<KristensenCLATimeStep<dim> >(ctl);
   else if (method == "CojocaruCycleJump")
     return std::make_unique<CojocaruCycleJump<dim> >(ctl);
+  else if (method == "LiCycleJump")
+    return std::make_unique<LiCycleJump<dim> >(ctl);
   else if (method == "JonasCycleJump")
     return std::make_unique<JonasCycleJump<dim> >(ctl);
   else if (method == "YangCycleJump")

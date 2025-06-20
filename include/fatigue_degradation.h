@@ -214,6 +214,133 @@ public:
 };
 
 template<int dim>
+class LiAccumulation : public FatigueAccumulation<dim> {
+public:
+  LiAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+    AssertThrow(ctl.params.fatigue_accumulation_parameters != "",
+                ExcInternalError(
+                  "Parameters of LiAccumulation is not assigned."));
+    std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
+    iss >> R >> chi_cr;
+  };
+
+  double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
+                   double degrade, double degrade_derivative,
+                   double degrade_second_derivative,
+                   Controller<dim> &ctl) override {
+    int n_jumps = static_cast<int>(ctl.get_info("N jump", 0.0));
+    double increm;
+    if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
+      // Regular accumulation
+      double dpsi =
+          lqph->get_increment_latest("Positive elastic energy", 0.0) * degrade;
+      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+    } else {
+      double y3 = lqph->get_initial("y3", 0.0);
+      double y2 = lqph->get_initial("y2", 0.0);
+      double y1 = lqph->get_initial("y1", 0.0);
+      double y0 = lqph->get_initial("y0", 0.0);
+      double y_current = y0;
+      for (int i = 0; i < n_jumps; i++) {
+        double dy = (y0 - y1) + 0.5 * (y0 - 2 * y1 + y2) + 0.25 * (y0 - 3 * y1 + 3 * y2 - y3);
+        y3 = y2;
+        y2 = y1;
+        y1 = y0;
+        y0 = y0 + dy;
+      }
+      increm = y0 - y_current;
+    }
+    return increm;
+  };
+
+  void record(const std::shared_ptr<PointHistory> &lqph, double phasefield,
+              double degrade, double degrade_derivative,
+              double degrade_second_derivative, Controller<dim> &ctl) {
+    // Determine the number of jumps
+    double subcycle = ctl.get_info("Subcycle", 0.0);
+    double max_jump = ctl.get_info("Maximum jump", 1.0e8);
+    if (std::abs(subcycle - 1) < 1e-8) {
+      lqph->update("y3", lqph->get_latest("Fatigue history", 0.0));
+    } else if (std::abs(subcycle - 2) < 1e-8) {
+      lqph->update("y2", lqph->get_latest("Fatigue history", 0.0));
+      lqph->update("phi2", lqph->get_latest("Phase field", 0.0));
+    } else if (std::abs(subcycle - 3) < 1e-8) {
+      lqph->update("y1", lqph->get_latest("Fatigue history", 0.0));
+      lqph->update("phi1", lqph->get_latest("Phase field", 0.0));
+    } else if (std::abs(subcycle - 4) < 1e-8) {
+      lqph->update("y0", lqph->get_latest("Fatigue history", 0.0));
+      double phi2 = lqph->get_initial("phi2", 0.0);
+      double phi1 = lqph->get_initial("phi1", 0.0);
+      double phi0 = lqph->get_latest("Phase field", 0.0);
+      if (phi0 < 1e-2 && (phi0 <= phi1 * (1 + 1e-6) || phi1 <= phi2 * (1 + 1e-6))) {
+        // The point is subject to minor numerical error, or they are not updated.
+        lqph->update("n_jump_local", max_jump);
+      } else {
+        double n_jump_local = 1;
+        while ((n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (phi0 - 2 * phi1 + phi2) <= (
+                 phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0) {
+          n_jump_local++;
+          if (n_jump_local >= max_jump) {
+            break;
+          }
+        }
+        // ctl.dcout << n_jump_local << " " << (n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (
+        // phi0 - 2 * phi1 + phi2) << " " << (
+        // phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0 << " " << phi0 << " " << phi1 << " "
+        // <<
+        // phi2 << std::endl;
+        lqph->update("n_jump_local", n_jump_local);
+      }
+    }
+  }
+
+  double R, chi_cr;
+};
+
+template<int dim>
+class LiCLAAccumulation : public LiAccumulation<dim> {
+public:
+  LiCLAAccumulation(Controller<dim> &ctl)
+    : LiAccumulation<dim>(ctl) {
+  };
+
+  double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
+                   double degrade, double degrade_derivative,
+                   double degrade_second_derivative,
+                   Controller<dim> &ctl) override {
+    int n_jumps = static_cast<int>(ctl.get_info("N jump", 0.0));
+    double increm;
+    if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
+      // Regular accumulation
+      if (ctl.current_timestep != ctl.params.timestep_size_2) {
+        double dpsi =
+            lqph->get_increment_latest("Positive elastic energy", 0.0) *
+            degrade;
+        increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      } else {
+        double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
+        increm = psi * (1 - this->R * this->R * (this->R >= 0 ? 1 : 0));
+      }
+    } else {
+      double y3 = lqph->get_initial("y3", 0.0);
+      double y2 = lqph->get_initial("y2", 0.0);
+      double y1 = lqph->get_initial("y1", 0.0);
+      double y0 = lqph->get_initial("y0", 0.0);
+      double y_current = y0;
+      for (int i = 0; i < n_jumps; i++) {
+        double dy = (y0 - y1) + 0.5 * (y0 - 2 * y1 + y2) + 0.25 * (y0 - 3 * y1 + 3 * y2 - y3);
+        y3 = y2;
+        y2 = y1;
+        y1 = y0;
+        y0 = y0 + dy;
+      }
+      increm = y0 - y_current;
+    }
+    return increm;
+  };
+};
+
+template<int dim>
 class JonasAccumulation : public FatigueAccumulation<dim> {
 public:
   JonasAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
@@ -500,6 +627,10 @@ select_fatigue_accumulation(std::string method, Controller<dim> &ctl) {
     return std::make_unique<CojocaruAccumulation<dim> >(ctl);
   else if (method == "CojocaruCLA")
     return std::make_unique<CojocaruCLAAccumulation<dim> >(ctl);
+  else if (method == "Li")
+    return std::make_unique<LiAccumulation<dim> >(ctl);
+  else if (method == "LiCLA")
+    return std::make_unique<LiCLAAccumulation<dim> >(ctl);
   else if (method == "Jonas")
     return std::make_unique<JonasAccumulation<dim> >(ctl);
   else if (method == "JonasCLA")

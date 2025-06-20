@@ -162,6 +162,10 @@ possible_n_params = {
         "Cojocaru": {"Name": "Cojocaru", "at": [3], "fa": [2]},
         "CojocaruCLA": {"Name": "CojocaruCLA", "at": [3], "fa": [2]},
     },
+    "LiCycleJump": {
+        "Li": {"Name": "Li", "at": [3], "fa": [2]},
+        "LiCLA": {"Name": "LiCLA", "at": [3], "fa": [2]},
+    },
     "JacconCycleJump": {"Jaccon": {"Name": "Jaccon", "at": [2], "fa": [0]}},
     "JonasCycleJump": {
         "Jonas": {
@@ -242,6 +246,42 @@ changable_parameters = {
                     5 * N_propagate,
                 ],  # None should be several times of N when max(phi) reaches 1
                 "type": int,
+                "ratio": 0.5,
+            }
+        },
+    },
+    "Li": {
+        "Adaptive timestep parameters": {
+            3: {
+                "name": "max_jump",
+                "range": [N_propagate // 2],  # Could be a super large number
+                "type": int,
+                "ratio": 1,
+            },
+        },
+        "Fatigue accumulation parameters": {
+            2: {
+                "name": "chi_cr",
+                "range": [0.01, 1],
+                "type": float,
+                "ratio": 0.5,
+            }
+        },
+    },
+    "LiCLA": {
+        "Adaptive timestep parameters": {
+            3: {
+                "name": "max_jump",
+                "range": [N_propagate // 2],  # Could be a super large number
+                "type": int,
+                "ratio": 1,
+            },
+        },
+        "Fatigue accumulation parameters": {
+            2: {
+                "name": "chi_cr",
+                "range": [0.01, 1],
+                "type": float,
                 "ratio": 0.5,
             }
         },

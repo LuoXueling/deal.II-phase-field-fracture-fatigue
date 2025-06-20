@@ -333,6 +333,10 @@ void PhaseField<dim>::output_results(DataOut<dim> &data_out,
                                             this->fe, ctl);
   hist_processor.add_data_scalar(this->solution, this->fields, data_out,
                                  this->dof_handler, ctl);
+  PointHistoryProcessor<dim> dn_processor("n_jump_local", this->fields,
+                                          this->fe, ctl);
+  dn_processor.add_data_scalar(this->solution, this->fields, data_out,
+                               this->dof_handler, ctl);
   if (ctl.params.enable_fatigue) {
     PointHistoryProcessor<dim> fatigue_processor("Fatigue history",
                                                  this->fields, this->fe, ctl);

@@ -106,7 +106,7 @@ namespace Parameters {
                 "Adaptive timestep", "exponential",
                 Patterns::Selection(
                     "exponential|constant|KristensenCLA|"
-                    "CojocaruCycleJump|JonasCycleJump|YangCycleJump|JacconCycleJump"));
+                    "CojocaruCycleJump|LiCycleJump|JonasCycleJump|YangCycleJump|JacconCycleJump"));
             prm.declare_entry("Adaptive timestep parameters", "", Patterns::Anything());
             prm.declare_entry("Timestep size", "1.0", Patterns::Double(0));
 
@@ -268,7 +268,7 @@ namespace Parameters {
                 "Fatigue accumulation", "CarraraNoMeanEffect",
                 Patterns::Selection(
                     "CarraraNoMeanEffect|CarraraMeanEffect|Kristensen|"
-                    "KristensenCLA|Cojocaru|CojocaruCLA|Jonas|JonasCLA|JonasNodegrade|"
+                    "KristensenCLA|Cojocaru|CojocaruCLA|Li|LiCLA|Jonas|JonasCLA|JonasNodegrade|"
                     "Yang|Jaccon|JacconNodegrade"));
             prm.declare_entry("Fatigue accumulation parameters", "",
                               Patterns::Anything());
