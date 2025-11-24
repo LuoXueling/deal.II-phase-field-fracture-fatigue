@@ -10,6 +10,7 @@ import os
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
+import pyvista
 
 SMOOTH_WINDOW = 10
 
@@ -402,6 +403,92 @@ def which_scheme(s: str):
         raise Exception(f"Unknown acceleration scheme ({at} and {fa})")
 
 
+supported_specimen = {
+    "CT022L5.inp": dict(crack_tip=(0.25 + 0.22) * 50, infer_cycle_by_name=True)
+}
+
+
+def get_phi_x_max(
+    path,
+    crack_tip: float,
+    cycle_per_file=10,
+    ylim=None,
+    infer_cycle_by_name=False,
+    direction="right",
+    read_every=1,
+):
+    pvtus = [x for x in os.listdir(path) if ".pvtu" in x]
+    sort_key = lambda x: int(os.path.splitext(x)[0].split("_")[-1])
+    pvtus = list(sorted(pvtus, key=sort_key))
+    pvtus = pvtus[0:-1:read_every] + [pvtus[-1]]
+    thres = 0.95
+    n_cycles = []
+    crack_lengths = []
+
+    for i, pvtu_name in enumerate(pvtus):
+        if not infer_cycle_by_name:
+            i_cycle = cycle_per_file * i * read_every
+        else:
+            i_cycle = int(pvtu_name.split(".pvtu")[0].split("_")[-1])
+
+        mesh = pyvista.read(os.path.join(path, pvtu_name))
+
+        points = mesh.points
+        try:
+            phasefield = mesh.get_array("Phase_field")
+        except:
+            continue
+        above_thres = np.where(phasefield > thres)[0]
+        if ylim is not None:
+            within_range = np.intersect1d(
+                np.where(points[:, 1] < ylim[1])[0], np.where(points[:, 1] > ylim[0])[0]
+            )
+            above_thres = np.intersect1d(within_range, above_thres)
+        if len(above_thres) == 0:
+            crack_lengths.append(0)
+            n_cycles.append(i_cycle)
+            continue
+        else:
+            crack_points = points[above_thres]
+            order_func = np.argmax if direction in ["right", "up"] else np.argmin
+            order_idx = 0 if direction in ["right", "left"] else 1
+            compare_func = np.greater if direction in ["right", "up"] else np.less
+            arg = order_func(crack_points[:, order_idx])
+            selected_point = points[above_thres[arg], :]
+            selected_point_phasefield = phasefield[above_thres[arg]]
+            selected_point_pos = points[above_thres[arg], order_idx]
+            other_points_idx = np.intersect1d(
+                np.where(points[:, order_idx] != selected_point[order_idx])[0],
+                np.where(compare_func(points[:, order_idx], selected_point[order_idx]))[
+                    0
+                ],
+            )
+            other_points = points[other_points_idx, :]
+            nearest_points_idx = np.argsort(
+                np.sqrt(np.sum((other_points - selected_point) ** 2, axis=1))
+            )[:10]
+            try:
+                next_point_idx = other_points_idx[
+                    nearest_points_idx[
+                        order_func(other_points[nearest_points_idx, order_idx])
+                    ]
+                ]
+            except:
+                continue
+            next_point_phasefield = phasefield[next_point_idx]
+            next_point_pos = points[next_point_idx, order_idx]
+            length = (
+                selected_point_pos
+                - crack_tip
+                + (0.95 - selected_point_phasefield)
+                * (next_point_pos - selected_point_pos)
+                / (next_point_phasefield - selected_point_phasefield)
+            )
+            crack_lengths.append(length)
+            n_cycles.append(i_cycle)
+    return n_cycles, crack_lengths
+
+
 def get_param(s: str, loc: int, t):
     return t(s.split(" ")[loc])
 
@@ -426,9 +513,17 @@ if __name__ == "__main__":
         s = file_in.read()
         file_in.close()
 
-        # What scheme are we using
+        # What scheme we are using
         scheme = which_scheme(s)
         log(f"Using acceleration scheme: {scheme}")
+
+        # What specimen we are using and whether it supports crack length detection
+        specimen = os.path.split(re.findall(f"Mesh from = " + r"(.*?)" + "\n", s)[0])[
+            -1
+        ]
+        log(f"Using specimen: {specimen}")
+        if specimen in supported_specimen.keys():
+            log(f"Specimen supports crack length detection.")
 
         # Max number of cycles in the parameter file
         max_no_steps = int(
@@ -516,7 +611,7 @@ if __name__ == "__main__":
                         pass
                 if len(res) > last_no_records:
                     log(
-                        f"log-results.txt updated. Current # of records: {len(res)}. Cycle: {list(res['Step-Out'])[-1]}. Crack length: {list(res['Crack-length'])[-1]}"
+                        f"log-results.txt updated. Current # of records: {len(res)}. Cycle: {list(res['Step-Out'])[-1]}. Crack length integration: {list(res['Crack-length'])[-1]}. Maximum phi: {list(res['Max-phi'])[-1]}"
                     )
                     last_no_records = len(res)
             else:
@@ -542,8 +637,8 @@ if __name__ == "__main__":
                         proc.kill()
                         break
             # The job is gonna be terminated by HPC
-            if (time.time() - job_start_time) / 60 / 60 / 24 > 6.95:
-                log("Reaching 7 days. Terminating the job.")
+            if (time.time() - job_start_time) / 60 / 60 / 24 > 4.95:
+                log("Reaching 5 days. Terminating the job.")
                 proc.kill()
                 sys.exit(0)
             time.sleep(1)
@@ -555,6 +650,61 @@ if __name__ == "__main__":
                 "Time spent < 10 s. Check if the setting is correct. Terminate the job."
             )
             break
+
+        with open(os.path.join(output_path, "log.txt"), "r") as file:
+            s = file.read()
+            res = [
+                (int(x), int(y))
+                for x, y in re.findall(
+                    r"Total CPU time elapsed since start.*?Factorization.*?\|\s+([0-9]+)\s+\|.*?Solve LUx=b.*?\|\s+([0-9]+)\s+\|",
+                    s,
+                    re.DOTALL,
+                )
+            ]
+            if len(res) == 0:
+                res_fact = [
+                    int(x)
+                    for x in re.findall(
+                        r"Total wallclock time elapsed since start.*?Factorization.*?\|\s+([0-9]+)\s+\|",
+                        s,
+                        re.DOTALL,
+                    )
+                ]
+                res_lub = [
+                    int(x)
+                    for x in re.findall(
+                        r"Total wallclock time elapsed since start.*?Solve LUx=b.*?\|\s+([0-9]+)\s+\|",
+                        s,
+                        re.DOTALL,
+                    )
+                ]
+                log(
+                    f"Total factorizations: {int(sum(res_fact))}. Total LUx=b solutions: {int(sum(res_lub))}."
+                )
+            else:
+                log(
+                    f"Total factorizations: {res[0][0]}. Total LUx=b solutions: {res[0][1]}."
+                )
+            res_timestep = [
+                float(x) for x in re.findall(r"Time.*?:\s+(.*?)\s+\(Step", s)
+            ]
+            cycle_count = (
+                len([x for x in res_timestep if x - math.floor(x) == 0.25]),
+                len([x for x in res_timestep if x - math.floor(x) == 0]),
+                len([x for x in res_timestep if x - math.floor(x) == 0.5]),
+                len([x for x in res_timestep if x - math.floor(x) == 0.75]),
+            )
+            log(
+                f"Number of cycles resolved: {min(cycle_count) if cycle_count[-2]!=0 else max(cycle_count)}"
+            )
+
+        if specimen in supported_specimen.keys():
+            log("Computing crack length ...")
+            n_cycles, crack_lengths = get_phi_x_max(
+                output_path, **supported_specimen[specimen]
+            )
+            log(f"Number of cycles: {n_cycles}")
+            log(f"Crack length: {crack_lengths}")
 
         # Get current fatigue life and evaluate criteria
         life = list(
@@ -577,9 +727,9 @@ if __name__ == "__main__":
             log(
                 f"Current life: {life}, last life: {last_life}, change ratio: {change_ratio}."
             )
-            if change_ratio < 0.05:
+            if change_ratio < 0.01:
                 log(
-                    f"Change ratio smaller than 5% ({change_ratio}). Terminating the job."
+                    f"Change ratio smaller than 1% ({change_ratio}). Terminating the job."
                 )
                 break
         last_life = life

@@ -23,11 +23,11 @@ public:
   virtual void assemble_newton_system(bool residual_only,
                                       LA::MPI::BlockVector &neumann_rhs,
                                       Controller<dim> &ctl) {
-    AssertThrow(false, ExcNotImplemented())
+    AssertThrow(false, ExcNotImplemented());
   };
 
   virtual void assemble_linear_system(Controller<dim> &ctl) {
-    AssertThrow(false, ExcNotImplemented())
+    AssertThrow(false, ExcNotImplemented());
   };
 
   virtual unsigned int solve(NewtonInformation<dim> &info,
@@ -153,7 +153,7 @@ AbstractField<dim>::AbstractField(std::vector<unsigned int> n_components,
   : fields(n_components, names, boundary_from, ctl),
     fe(fields.FE_Q_sequence, fields.FE_Q_dim_sequence),
     dof_handler(ctl.triangulation), update_scheme_timestep(update_scheme),
-    direct_solver(direct_solver_control),
+    direct_solver(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type)),
     qpoint_to_dof_matrix(fe.dofs_per_cell, ctl.quadrature_formula.size()) {
   newton_ctl = select_newton_variation<dim>(ctl.params.adjustment_method, ctl);
   if (fe.n_components() == 1) {
@@ -612,7 +612,7 @@ unsigned int AbstractField<dim>::solve_linear_system(
     ctl.timer.leave_subsection("Solve LUx=b");
     return 1;
   } else {
-    SolverGMRES<LA::MPI::BlockVector> solver(solver_control);
+    SolverCG<LA::MPI::BlockVector> solver(solver_control);
     ctl.debug_dcout << "Solve Newton system - Newton iteration - solve linear "
         "system - solve"
         << std::endl;

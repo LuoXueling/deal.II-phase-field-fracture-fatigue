@@ -72,6 +72,7 @@ namespace Parameters {
         unsigned int switch_timestep;
         std::string norm_type;
         bool direct_solver;
+        std::string direct_solver_type;
         double lower_bound_newton_residual;
         unsigned int max_no_newton_steps;
         bool skip_first_iter;
@@ -114,6 +115,7 @@ namespace Parameters {
 
             prm.declare_entry("Switch timestep after steps", "0", Patterns::Integer(0));
             prm.declare_entry("Use Direct Inner Solver", "false", Patterns::Bool());
+            prm.declare_entry("Use Direct Inner Solver type", "Amesos_Klu", Patterns::Anything());
 
             prm.declare_entry("Norm type", "linfty",
                               Patterns::Selection("linfty|l2|l1"));
@@ -182,6 +184,7 @@ namespace Parameters {
             switch_timestep = prm.get_integer("Switch timestep after steps");
 
             direct_solver = prm.get_bool("Use Direct Inner Solver");
+            direct_solver_type = prm.get("Use Direct Inner Solver type");
 
             norm_type = prm.get("Norm type");
 

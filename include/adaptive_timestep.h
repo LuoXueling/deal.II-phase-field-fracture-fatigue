@@ -73,7 +73,7 @@ public:
 
   virtual void failure_criteria(Controller<dim> &ctl) {
     if (new_timestep < ctl.params.timestep * 1e-8) {
-      AssertThrow(false, ExcInternalError("Step size too small"))
+      AssertThrow(false, ExcInternalError("Step size too small"));
     }
   }
 
