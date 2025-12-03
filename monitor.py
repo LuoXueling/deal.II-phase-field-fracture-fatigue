@@ -69,7 +69,7 @@ def is_last_point_rough(n_cycles, data: List[float]) -> bool:
     z_score_2 = abs(
         (data[-1] - data[-2]) / (n_cycles[-1] - n_cycles[-2]) - mean_val
     ) / (math.sqrt(variance) + 1e-50)
-    if z_score_1 > 20 and z_score_2 > 20:
+    if z_score_1 > 50 and z_score_2 > 50:
         log(f"Rough. Z_score 1 = {z_score_1}, Z_score 2 = {z_score_2}")
         return True
     else:
@@ -81,10 +81,6 @@ def has_last_point_spike(n_cycles, data: List[float]) -> bool:
     base_x = n_cycles[:-2]
     slopes = []
     for i in range(1, len(base_data)):
-        base_data[i]
-        base_data[i - 1]
-        base_x[i]
-        base_x[i - 1]
         slopes.append((base_data[i] - base_data[i - 1]) / (base_x[i] - base_x[i - 1]))
 
     mean_val = sum(slopes) / len(slopes)
@@ -503,6 +499,8 @@ def set_param(s: str, loc: int, new_val, t):
 if __name__ == "__main__":
     last_life = -1
     next_para = None
+    change_ratio = None
+    change_ratio_hist = []
     job_start_time = time.time()
 
     ## Loop start from here
@@ -633,9 +631,23 @@ if __name__ == "__main__":
                     if is_last_point_anomaly(
                         list(res["Step-Out"]), list(res["Crack-length"])
                     ):
-                        log("Crack length anomaly detected. Killing the process.")
-                        proc.kill()
-                        break
+                        if (
+                            len(change_ratio_hist) > 2
+                            and change_ratio_hist[-1] < change_ratio_hist[-2]
+                            and change_ratio_hist[-2] < change_ratio_hist[-3]
+                            and list(res["Step-Out"])[-1] < last_life
+                            and (
+                                abs(list(res["Step-Out"])[-1] - last_life) / last_life
+                                > 1.2 * change_ratio_hist[-1]
+                            )
+                        ):
+                            log(
+                                "Crack length anomaly detected, but it's probably a fault as previous parameters are making fatigue life converging."
+                            )
+                        else:
+                            log("Crack length anomaly detected. Killing the process.")
+                            proc.kill()
+                            break
             # The job is gonna be terminated by HPC
             if (time.time() - job_start_time) / 60 / 60 / 24 > 4.95:
                 log("Reaching 5 days. Terminating the job.")
@@ -728,10 +740,20 @@ if __name__ == "__main__":
                 f"Current life: {life}, last life: {last_life}, change ratio: {change_ratio}."
             )
             if change_ratio < 0.01:
-                log(
-                    f"Change ratio smaller than 1% ({change_ratio}). Terminating the job."
-                )
-                break
+                if len(change_ratio_hist) == 0:
+                    log(
+                        f"Change ratio smaller than 1% ({change_ratio}), but we only have two completed results. We are not confident enough to terminate the job."
+                    )
+                elif len(change_ratio_hist) > 0 and change_ratio_hist[-1] > 0.1:
+                    log(
+                        f"Change ratio smaller than 1% ({change_ratio}), but the last change ratio is greater than 10%. We are not confident enough to terminate the job."
+                    )
+                else:
+                    log(
+                        f"Change ratio smaller than 1% ({change_ratio}). Terminating the job."
+                    )
+                    break
+            change_ratio_hist.append(change_ratio)
         last_life = life
         ############### decide the next parameters and check if it's legal ##############
 
