@@ -236,6 +236,7 @@ namespace Parameters {
         double mu;
         double lame_coefficient_mu;
         double lame_coefficient_lambda;
+        double density;
         std::string plane_state;
         std::string phasefield_model;
         std::string degradation;
@@ -255,6 +256,7 @@ namespace Parameters {
             prm.declare_entry("Poisson's ratio", "0.3", Patterns::Double(0, 0.5));
             prm.declare_entry("Critical energy release rate", "1", Patterns::Double(0));
             prm.declare_entry("Phase field length scale", "0.01", Patterns::Double(0));
+            prm.declare_entry("Density (for self weight)", "0.0", Patterns::Double(0));
             prm.declare_entry("Plane state", "stress",
                               Patterns::Selection("stress|strain"));
             prm.declare_entry("Phase field model", "AT2",
@@ -285,6 +287,7 @@ namespace Parameters {
             v = prm.get_double("Poisson's ratio");
             Gc = prm.get_double("Critical energy release rate");
             l_phi = prm.get_double("Phase field length scale");
+            density = prm.get_double("Density (for self weight)");
             plane_state = prm.get("Plane state");
             phasefield_model = prm.get("Phase field model");
             degradation = prm.get("Degradation");

@@ -82,6 +82,9 @@ void Elasticity<dim>::assemble_newton_system(bool residual_only,
     std::vector<Tensor<2, dim> > Bu_kq(dofs_per_cell);
     std::vector<SymmetricTensor<2, dim> > Bu_kq_symmetric(dofs_per_cell);
 
+    Tensor<1, dim> body_force_vector;
+    body_force_vector[1] = -ctl.params.density * 9.81; // deal.ii always interpret the last dimension in abaqus as the second component
+
     Tensor<2, dim> zero_matrix;
     zero_matrix.clear();
 
@@ -194,6 +197,8 @@ void Elasticity<dim>::assemble_newton_system(bool residual_only,
                     cell_rhs(i) += scalar_product(Bu_kq[i], degrade * stress_positive +
                                                             stress_negative) *
                             fe_values.JxW(q);
+                    // Body force (y-dir in 2D and z-dir in 3D)
+                    cell_rhs(i) -= body_force_vector * Nu_kq[i] * fe_values.JxW(q);
                 }
 
                 // Update history
