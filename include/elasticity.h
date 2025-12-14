@@ -83,7 +83,7 @@ void Elasticity<dim>::assemble_newton_system(bool residual_only,
     std::vector<SymmetricTensor<2, dim> > Bu_kq_symmetric(dofs_per_cell);
 
     Tensor<1, dim> body_force_vector;
-    body_force_vector[1] = -ctl.params.density * 9.81; // deal.ii always interpret the last dimension in abaqus as the second component
+    body_force_vector[dim-1] = -ctl.params.density * 9.81;
 
     Tensor<2, dim> zero_matrix;
     zero_matrix.clear();
