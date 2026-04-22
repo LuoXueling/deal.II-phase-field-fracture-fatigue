@@ -138,8 +138,9 @@ public:
   LA::MPI::BlockVector system_solution;
 
   SolverControl direct_solver_control;
-  TrilinosWrappers::SolverDirect direct_solver;
-
+  // TrilinosWrappers::SolverDirect direct_solver;
+  std::unique_ptr<TrilinosWrappers::SolverDirect> solver_ptr;
+  
   std::unique_ptr<NewtonVariation<dim> > newton_ctl;
   NewtonInformation<dim> newton_info;
 };
@@ -153,9 +154,9 @@ AbstractField<dim>::AbstractField(std::vector<unsigned int> n_components,
   : fields(n_components, names, boundary_from, ctl),
     fe(fields.FE_Q_sequence, fields.FE_Q_dim_sequence),
     dof_handler(ctl.triangulation), update_scheme_timestep(update_scheme),
-    direct_solver(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type)),
     qpoint_to_dof_matrix(fe.dofs_per_cell, ctl.quadrature_formula.size()) {
   newton_ctl = select_newton_variation<dim>(ctl.params.adjustment_method, ctl);
+  solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
   if (fe.n_components() == 1) {
     FETools::compute_projection_from_quadrature_points_matrix(
       fe, ctl.quadrature_formula, ctl.quadrature_formula,
@@ -570,9 +571,9 @@ unsigned int AbstractField<dim>::solve(NewtonInformation<dim> &info,
       LA::MPI::PreconditionAMG::AdditionalData data;
       data.constant_modes = fields_constant_modes[i];
       data.elliptic = true;
-      data.higher_order_elements = true;
-      data.smoother_sweeps = 2;
-      data.aggregation_threshold = 0.02;
+      // data.higher_order_elements = true;
+      // data.smoother_sweeps = 2;
+      // data.aggregation_threshold = 0.02;
       std::shared_ptr<LA::MPI::PreconditionAMG> prec(
         new LA::MPI::PreconditionAMG);
       prec->initialize(system_matrix.block(i, i), data);
@@ -596,9 +597,11 @@ unsigned int AbstractField<dim>::solve_linear_system(
           << "Solve Newton system - Newton iteration - solve linear "
           "system - factorization"
           << std::endl;
+      solver_ptr.reset();
+      solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
       ctl.timer.enter_subsection("Factorization");
       ctl.computing_timer.enter_subsection("Factorization");
-      direct_solver.initialize(system_matrix.block(0, 0));
+      this->solver_ptr->initialize(system_matrix.block(0, 0));
       ctl.computing_timer.leave_subsection("Factorization");
       ctl.timer.leave_subsection("Factorization");
     }
@@ -607,7 +610,7 @@ unsigned int AbstractField<dim>::solve_linear_system(
         << std::endl;
     ctl.timer.enter_subsection("Solve LUx=b");
     ctl.computing_timer.enter_subsection("Solve LUx=b");
-    direct_solver.solve(system_solution.block(0), system_rhs.block(0));
+    this->solver_ptr->solve(system_solution.block(0), system_rhs.block(0));
     ctl.computing_timer.leave_subsection("Solve LUx=b");
     ctl.timer.leave_subsection("Solve LUx=b");
     return 1;
