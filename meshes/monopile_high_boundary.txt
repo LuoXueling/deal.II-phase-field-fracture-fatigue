@@ -1,0 +1,15 @@
+1 dirichlet 0 0.0
+1 dirichlet 1 0.0
+1 dirichlet 2 0.0
+2 neumann 0.0 0.0 -4.743563e+06
+2 triangularneumann 1 0 0 1.0 2.103427e+05 2.103427e+05
+3 triangularneumann 1 0 0 1.0 5.172501e+03 5.172501e+03
+4 triangularneumann 1 0 0 1.0 4.227461e+01 4.227461e+01
+5 triangularneumann 1 0 0 1.0 4.992600e+01 4.992600e+01
+6 triangularneumann 1 0 0 1.0 5.502863e+01 5.502863e+01
+7 triangularneumann 1 0 0 1.0 5.896224e+01 5.896224e+01
+8 triangularneumann 1 0 0 1.0 6.220602e+01 6.220602e+01
+9 triangularneumann 1 0 0 1.0 6.498841e+01 6.498841e+01
+10 triangularneumann 1 0 0 1.0 6.743776e+01 6.743776e+01
+11 triangularneumann 1 0 0 1.0 6.963398e+01 6.963398e+01
+12 triangularneumann 1 0 0 1.0 7.105002e+01 7.105002e+01
