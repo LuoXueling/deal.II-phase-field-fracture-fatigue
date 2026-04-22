@@ -10,9 +10,6 @@
 /cmake-build-debug-docker
 /build*/
 /default.prm
-post_process.ipynb
-/ref
-/plots
 .SynologyWorkingDirectory
 main
 .idea
