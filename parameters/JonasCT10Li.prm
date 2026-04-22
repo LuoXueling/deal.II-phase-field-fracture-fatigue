@@ -24,7 +24,7 @@ subsection Runtime
 
   # Solver
   set Use Direct Inner Solver = true
-  set Newton lower bound = 1.0e-6
+  set Newton lower bound = 1.0e-7
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
@@ -39,7 +39,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-6
+  set Residual tolerance of multipass = 1.0e-8
   set Quit multipass if residual increasing = false
 
   # "linear" to solve K_phi * phi = r_phi
