@@ -2,7 +2,7 @@
 
 ### Installation
 
-This code is tested on the official deal.II docker image [v9.6.0-noble-amd](https://hub.docker.com/layers/dealii/dealii/v9.6.0-noble-amd64/images/sha256-b69efa3a16499913927e062b71104d2e8e6780a7fe387d91008b87c1eda64334) and v9.4.0-focal (no longer provided on docker hub but is compatible).
+This code is tested on the official deal.II docker image [v9.6.0-noble-amd](https://hub.docker.com/layers/dealii/dealii/v9.6.0-noble-amd64/images/sha256-b69efa3a16499913927e062b71104d2e8e6780a7fe387d91008b87c1eda64334) and [v9.4.0-focal](https://hub.docker.com/layers/dealii/dealii/v9.4.0-focal/images/sha256-ca02d4f9e2cc6fbae5226f3c6fb4c6ff9399770ec9c376f2bbec893139341367).
 
 ### Usage
 
