@@ -56,6 +56,15 @@ def window_slope_variance(n_cycles, data: List[float], pos: int, window: int) ->
 def is_last_point_rough(n_cycles, data: List[float]) -> bool:
     base_data = data[-10:-2]
     base_x = n_cycles[-10:-2]
+
+    changes_data = np.abs([data[i] - data[i - 1] for i in range(-9, 0)])
+    changes_x = np.abs([n_cycles[i] - n_cycles[i - 1] for i in range(-9, 0)])
+    if (
+        np.max(changes_data) / (np.min(changes_data)+1e-16) > 10
+        or np.max(changes_x) / (np.min(changes_x)+1e-16) > 10
+    ):
+        return False
+
     slopes = []
     for i in range(1, len(base_data)):
         slopes.append((base_data[i] - base_data[i - 1]) / (base_x[i] - base_x[i - 1]))
@@ -611,7 +620,7 @@ if __name__ == "__main__":
                     log(
                         f"log-results.txt updated. Current # of records: {len(res)}. Cycle: {list(res['Step-Out'])[-1]}. Crack length integration: {list(res['Crack-length'])[-1]}. Maximum phi: {list(res['Max-phi'])[-1]}"
                     )
-                    last_no_records = len(res)
+                    # last_no_records = len(res)
             else:
                 res = None
             # The process terminates itself
@@ -626,15 +635,15 @@ if __name__ == "__main__":
                     break
             # Anomaly detected and the process is terminated
             else:
-                if res is not None:
+                if res is not None and len(res) > last_no_records:
                     res.drop_duplicates(subset="Step-Out", keep="last", inplace=True)
                     if is_last_point_anomaly(
                         list(res["Step-Out"]), list(res["Crack-length"])
                     ):
                         if (
                             len(change_ratio_hist) > 2
-                            and change_ratio_hist[-1] < change_ratio_hist[-2]
-                            and change_ratio_hist[-2] < change_ratio_hist[-3]
+                            and change_ratio_hist[-1] < 1.5 * change_ratio_hist[-2]
+                            and change_ratio_hist[-2] < 1.5 * change_ratio_hist[-3]
                             and list(res["Step-Out"])[-1] < last_life
                             and (
                                 abs(list(res["Step-Out"])[-1] - last_life) / last_life
@@ -648,6 +657,8 @@ if __name__ == "__main__":
                             log("Crack length anomaly detected. Killing the process.")
                             proc.kill()
                             break
+            if res is not None and len(res) > last_no_records:
+                last_no_records = len(res)
             # The job is gonna be terminated by HPC
             if (time.time() - job_start_time) / 60 / 60 / 24 > 4.95:
                 log("Reaching 5 days. Terminating the job.")

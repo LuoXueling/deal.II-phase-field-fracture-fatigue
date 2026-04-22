@@ -165,6 +165,8 @@ void MultiFieldCfg<dim>::define_boundary_condition(
       }
     }
     fb.close();
+  } else {
+    AssertThrow(false, ExcInternalError("Boundary file does not exist."));
   }
 }
 

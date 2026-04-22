@@ -622,8 +622,15 @@ public:
           subcycle = 0.0; // PointHistory will record from y1 again.
         }
         if (n_jump > 1e8) {
-          ctl.dcout << "Infinite cycle jump. Set to zero" << std::endl;
-          n_jump = 0;
+          if (stage < 3) {
+            ctl.dcout << "Infinite number of jumps. Set to zero (not at stage 3)" << std::endl;
+            n_jump = 0;
+          } else {
+            n_jump = std::floor(last_jump / 2);
+            ctl.dcout
+                << "Infinite number of jumps. Using half of the last jump: "
+                << n_jump << std::endl;
+          }
         }
         if (n_jump > 1) {
           ctl.set_info("N jump", n_jump);
@@ -1241,11 +1248,17 @@ public:
     if (!(std::abs(subcycle) < 1e-8 && n_resolved_cycles >= 1)) {
       throw std::runtime_error("Staggered scheme does not converge when no"
         "cycle jump is performed.");
-    } else if (n_trials > 100 || (last_residual > last_last_residual &&
+    } else if (n_trials > 100 || (n_trials > 2 && last_residual > last_last_residual &&
                                   residual > last_residual)) {
       throw std::runtime_error(
-        "Trapezoidal iterative extrapolation does not converge. Consider "
-        "using a smaller cycle jump.");
+        "Trapezoidal iterative extrapolation does not converge below tol in 100 trials, "
+        "or not converging after 2 trials. Consider using a smaller cycle jump.");
+    } else if (last_residual > last_last_residual &&
+                                  residual > last_residual) {
+      ctl.dcout << "Trapezoidal iterative extrapolation is not converging, "
+                    "but let's keep doing for 2 trials. " << std::endl;
+      last_last_residual = last_residual;
+      last_residual = residual;
     } else {
       last_last_residual = last_residual;
       last_residual = residual;
