@@ -303,7 +303,7 @@ Controller<dim>::Controller(Parameters::AllParameters &prms)
     quadrature_formula(prms.poly_degree + 1),
     fout(prms.output_dir + "log.txt"), sbuf(fout.rdbuf(), std::cout.rdbuf()),
     pout(&sbuf),
-    dcout(pout, (Utilities::MPI::this_mpi_process(mpi_com) == 0)),
+    dcout(pout, (dealii::Utilities::MPI::this_mpi_process(mpi_com) == 0)),
     debug_dcout(std::cout, &mpi_com, prms.debug_output),
     timer(mpi_com, dcout, TimerOutput::never,
           TimerOutput::cpu_and_wall_times),

@@ -440,7 +440,7 @@ void Elasticity<dim>::compute_load(Controller<dim> &ctl) {
             ctl.debug_dcout
                     << "Computing output - elasticity - load - recording - dim - sum"
                     << std::endl;
-            double load = Utilities::MPI::sum(it.second[i], ctl.mpi_com);
+            double load = dealii::Utilities::MPI::sum(it.second[i], ctl.mpi_com);
             ctl.debug_dcout
                     << "Computing output - elasticity - load - recording - dim - record"
                     << std::endl;

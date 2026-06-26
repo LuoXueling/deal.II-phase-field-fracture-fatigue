@@ -238,7 +238,7 @@ void AbstractField<dim>::setup_system(Controller<dim> &ctl) {
     DoFTools::make_sparsity_pattern(
       dof_handler, sparsity_pattern, constraints_all,
       /*keep constrained dofs*/ false,
-      Utilities::MPI::this_mpi_process(ctl.mpi_com));
+      dealii::Utilities::MPI::this_mpi_process(ctl.mpi_com));
     sparsity_pattern.compress();
     system_matrix.clear();
     system_matrix.reinit(sparsity_pattern);

@@ -20,7 +20,7 @@
 int main(int argc, char *argv[]) {
   try {
     using namespace dealii;
-    Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+    dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
     Parameters::AllParameters params;
     if (argc == 2)
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     else
       params.set_parameters("../parameters/test.prm");
 
-    if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
+    if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
       // prepare directories
       std::string command;
       command = "mkdir " + params.output_dir_top;

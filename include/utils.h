@@ -251,7 +251,7 @@ inline const DebugConditionalOStream &
 DebugConditionalOStream::operator<<(const T &t) const {
   if (is_active() == true) {
     get_stream() << std::to_string(
-          Utilities::MPI::this_mpi_process(*my_mpi_com)) +
+          dealii::Utilities::MPI::this_mpi_process(*my_mpi_com)) +
         ": ";
     get_stream() << t;
   }

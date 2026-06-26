@@ -25,7 +25,7 @@ namespace GlobalEstimator {
       }
     }
     double global_integration =
-        Utilities::MPI::sum(local_integration, ctl.mpi_com);
+        dealii::Utilities::MPI::sum(local_integration, ctl.mpi_com);
     return global_integration;
   }
 
@@ -46,7 +46,7 @@ namespace GlobalEstimator {
       }
     }
     double global_integration =
-        Utilities::MPI::sum(local_integration, ctl.mpi_com);
+        dealii::Utilities::MPI::sum(local_integration, ctl.mpi_com);
     return global_integration;
   }
 
@@ -66,7 +66,7 @@ namespace GlobalEstimator {
         }
       }
     }
-    double global_max = Utilities::MPI::max(local_max, ctl.mpi_com);
+    double global_max = dealii::Utilities::MPI::max(local_max, ctl.mpi_com);
     return global_max;
   }
 
@@ -87,7 +87,7 @@ namespace GlobalEstimator {
         }
       }
     }
-    double global_max = Utilities::MPI::max(local_max, ctl.mpi_com);
+    double global_max = dealii::Utilities::MPI::max(local_max, ctl.mpi_com);
     return global_max;
   }
 
@@ -107,7 +107,7 @@ namespace GlobalEstimator {
         }
       }
     }
-    double global_min = Utilities::MPI::min(local_min, ctl.mpi_com);
+    double global_min = dealii::Utilities::MPI::min(local_min, ctl.mpi_com);
     return global_min;
   }
 
@@ -128,7 +128,7 @@ namespace GlobalEstimator {
         }
       }
     }
-    double global_min = Utilities::MPI::min(local_min, ctl.mpi_com);
+    double global_min = dealii::Utilities::MPI::min(local_min, ctl.mpi_com);
     return global_min;
   }
 }; // namespace GlobalEstimator

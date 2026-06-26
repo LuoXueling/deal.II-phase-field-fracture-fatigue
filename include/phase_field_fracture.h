@@ -228,7 +228,7 @@ bool PhaseFieldFracture<dim>::refine_grid() {
   }
   (this->ctl).debug_dcout << "Refine - finish marking" << std::endl;
   double will_refine_global =
-      Utilities::MPI::sum(will_refine, (this->ctl).mpi_com);
+      dealii::Utilities::MPI::sum(will_refine, (this->ctl).mpi_com);
   if (!static_cast<bool>(will_refine_global)) {
     (this->ctl).dcout << "No cell to refine" << std::endl;
     return false;

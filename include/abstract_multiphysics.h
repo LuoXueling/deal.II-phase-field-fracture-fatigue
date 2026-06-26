@@ -67,7 +67,7 @@ void AbstractMultiphysics<dim>::run() {
   ctl.dcout << "Output directory: " << ctl.params.output_dir << std::endl;
   ctl.dcout << "Solving " << ctl.params.dim << " dimensional PFM problem"
       << std::endl;
-  ctl.dcout << "Running on " << Utilities::MPI::n_mpi_processes(ctl.mpi_com)
+  ctl.dcout << "Running on " << dealii::Utilities::MPI::n_mpi_processes(ctl.mpi_com)
       << " MPI rank(s)" << std::endl;
   ctl.dcout << "Number of threads " << MultithreadInfo::n_threads()
       << std::endl;
@@ -317,7 +317,7 @@ void AbstractMultiphysics<dim>::output_results() {
                                       2, 8);
 
   ctl.debug_dcout << "Computing output - report statistics" << std::endl;
-  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
+  if (dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0) {
     std::ofstream stat_file(
       (ctl.params.output_dir + "/log-results.txt").c_str());
     ctl.statistics.write_text(stat_file);
