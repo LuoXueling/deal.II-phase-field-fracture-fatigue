@@ -8,6 +8,7 @@
 #include "boundary.h"
 #include "controller.h"
 #include "dealii_includes.h"
+#include "mumps_direct_solver.h"
 #include "multi_field.h"
 #include "newton_variations.h"
 #include <typeinfo>
@@ -140,7 +141,14 @@ public:
   SolverControl direct_solver_control;
   // TrilinosWrappers::SolverDirect direct_solver;
   std::unique_ptr<TrilinosWrappers::SolverDirect> solver_ptr;
-  
+  // Used in place of solver_ptr when direct_solver_type == "Amesos_Mumps", so we
+  // can raise MUMPS ICNTL(14) (see mumps_direct_solver.h).
+  std::unique_ptr<MumpsDirectSolver> mumps_solver_ptr;
+  bool use_custom_mumps;
+  // MUMPS working-space margin ICNTL(14). Starts at 20; bumped by 20 (and kept
+  // bumped for the rest of the run) whenever factorization fails, up to a cap.
+  int mumps_icntl14 = 20;
+
   std::unique_ptr<NewtonVariation<dim> > newton_ctl;
   NewtonInformation<dim> newton_info;
 };
@@ -156,7 +164,12 @@ AbstractField<dim>::AbstractField(std::vector<unsigned int> n_components,
     dof_handler(ctl.triangulation), update_scheme_timestep(update_scheme),
     qpoint_to_dof_matrix(fe.dofs_per_cell, ctl.quadrature_formula.size()) {
   newton_ctl = select_newton_variation<dim>(ctl.params.adjustment_method, ctl);
-  solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
+  use_custom_mumps = (ctl.params.direct_solver_type == "Amesos_Mumps");
+  if (use_custom_mumps)
+    mumps_solver_ptr = std::make_unique<MumpsDirectSolver>(
+      direct_solver_control, mumps_icntl14);
+  else
+    solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
   if (fe.n_components() == 1) {
     FETools::compute_projection_from_quadrature_points_matrix(
       fe, ctl.quadrature_formula, ctl.quadrature_formula,
@@ -597,11 +610,44 @@ unsigned int AbstractField<dim>::solve_linear_system(
           << "Solve Newton system - Newton iteration - solve linear "
           "system - factorization"
           << std::endl;
-      solver_ptr.reset();
-      solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
       ctl.timer.enter_subsection("Factorization");
       ctl.computing_timer.enter_subsection("Factorization");
-      this->solver_ptr->initialize(system_matrix.block(0, 0));
+      if (use_custom_mumps) {
+        // Try to factorize with the current MUMPS working-space margin
+        // ICNTL(14). On failure (typically INFOG(1)=-9), bump ICNTL(14) by 20,
+        // print a note, and retry; the bumped value persists for the rest of
+        // the simulation. If the next bump would exceed the cap, re-raise.
+        constexpr int icntl14_increment = 20;
+        constexpr int icntl14_cap = 200;
+        while (true) {
+          try {
+            mumps_solver_ptr.reset();
+            mumps_solver_ptr = std::make_unique<MumpsDirectSolver>(
+              direct_solver_control, mumps_icntl14);
+            this->mumps_solver_ptr->initialize(system_matrix.block(0, 0));
+            break;
+          } catch (const std::exception &exc) {
+            if (mumps_icntl14 + icntl14_increment > icntl14_cap) {
+              ctl.computing_timer.leave_subsection("Factorization");
+              ctl.timer.leave_subsection("Factorization");
+              AssertThrow(
+                false,
+                ExcMessage(
+                  "Amesos_Mumps factorization still failed at ICNTL(14)=" +
+                  std::to_string(mumps_icntl14) + " (cap " +
+                  std::to_string(icntl14_cap) + "): " + exc.what()));
+            }
+            mumps_icntl14 += icntl14_increment;
+            ctl.dcout << "Amesos_Mumps factorization failed; increasing MUMPS "
+                         "ICNTL(14) to "
+                      << mumps_icntl14 << " and retrying." << std::endl;
+          }
+        }
+      } else {
+        solver_ptr.reset();
+        solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
+        this->solver_ptr->initialize(system_matrix.block(0, 0));
+      }
       ctl.computing_timer.leave_subsection("Factorization");
       ctl.timer.leave_subsection("Factorization");
     }
@@ -610,7 +656,11 @@ unsigned int AbstractField<dim>::solve_linear_system(
         << std::endl;
     ctl.timer.enter_subsection("Solve LUx=b");
     ctl.computing_timer.enter_subsection("Solve LUx=b");
-    this->solver_ptr->solve(system_solution.block(0), system_rhs.block(0));
+    if (use_custom_mumps)
+      this->mumps_solver_ptr->solve(system_solution.block(0),
+                                    system_rhs.block(0));
+    else
+      this->solver_ptr->solve(system_solution.block(0), system_rhs.block(0));
     ctl.computing_timer.leave_subsection("Solve LUx=b");
     ctl.timer.leave_subsection("Solve LUx=b");
     return 1;

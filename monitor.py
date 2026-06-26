@@ -60,8 +60,8 @@ def is_last_point_rough(n_cycles, data: List[float]) -> bool:
     changes_data = np.abs([data[i] - data[i - 1] for i in range(-9, 0)])
     changes_x = np.abs([n_cycles[i] - n_cycles[i - 1] for i in range(-9, 0)])
     if (
-        np.max(changes_data) / (np.min(changes_data)+1e-16) > 10
-        or np.max(changes_x) / (np.min(changes_x)+1e-16) > 10
+        np.max(changes_data) / (np.min(changes_data) + 1e-16) > 10
+        or np.max(changes_x) / (np.min(changes_x) + 1e-16) > 10
     ):
         return False
 
@@ -596,7 +596,7 @@ if __name__ == "__main__":
                 mpi_command,
                 cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "build"),
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
+                # stderr=subprocess.STDOUT,
             )
         except Exception as e:
             log(f"Error when executing {' '.join(mpi_command)}")

@@ -81,7 +81,7 @@ if __name__ == "__main__":
             mpi_command,
             cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "build"),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
+            # stderr=subprocess.STDOUT,
         )
     except Exception as e:
         log(f"Error when executing {' '.join(mpi_command)}")
