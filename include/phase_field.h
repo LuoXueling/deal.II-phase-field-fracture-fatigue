@@ -426,7 +426,7 @@ void PhaseField<dim>::recompute_pinned_dofs(Controller<dim> &ctl) {
   // what keeps the pinned set consistent on every rank.
   std::vector<Point<dim> > seeds;
   for (const auto &chunk:
-       Utilities::MPI::all_gather(ctl.mpi_com, local_seeds))
+       dealii::Utilities::MPI::all_gather(ctl.mpi_com, local_seeds))
     seeds.insert(seeds.end(), chunk.begin(), chunk.end());
   if (seeds.empty())
     return;
