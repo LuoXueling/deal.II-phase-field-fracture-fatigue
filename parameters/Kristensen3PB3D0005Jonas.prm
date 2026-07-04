@@ -21,6 +21,7 @@ subsection Runtime
   set Switch timestep after steps = 1
 
   set Maximum crack length = 10
+  set Fix phase field near boundary = 1
 
   # Solver
   set Use Direct Inner Solver = true
