@@ -93,6 +93,7 @@ namespace Parameters {
         double constant_k;
         unsigned int save_vtk_per_step;
         double max_crack_length;
+        double fix_phasefield_near_boundary_distance;
 
         static void subsection_declare_parameters(ParameterHandler &prm);
 
@@ -170,6 +171,11 @@ namespace Parameters {
             prm.declare_entry("Save vtk per step", "1", Patterns::Integer(0));
 
             prm.declare_entry("Maximum crack length", "1e8", Patterns::Double(0));
+
+            // Fix the phase field to 0 (intact) at nodes within this distance of
+            // any boundary face carrying a Dirichlet/Neumann BC. Negative = disabled.
+            prm.declare_entry("Fix phase field near boundary", "-1",
+                              Patterns::Double());
         }
         prm.leave_subsection();
     }
@@ -223,6 +229,8 @@ namespace Parameters {
 
             save_vtk_per_step = prm.get_integer("Save vtk per step");
             max_crack_length = prm.get_double("Maximum crack length");
+            fix_phasefield_near_boundary_distance =
+                    prm.get_double("Fix phase field near boundary");
         }
         prm.leave_subsection();
     }

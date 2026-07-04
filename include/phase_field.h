@@ -13,8 +13,10 @@
 #include "parameters.h"
 #include "post_processors.h"
 #include "utils.h"
+#include <deal.II/base/mpi.h>
 #include <fstream>
 #include <iostream>
+#include <set>
 using namespace dealii;
 
 template<int dim>
@@ -31,6 +33,16 @@ public:
   void output_results(DataOut<dim> &data_out, Controller<dim> &ctl) override;
 
   void enforce_phase_field_limitation(Controller<dim> &ctl);
+
+  void add_extra_constraints(Controller<dim> &ctl) override;
+
+  // Mesh-dependent set of phase-field DOFs to pin to phi=0 for the "Fix phase
+  // field near boundary" feature. Recomputed only when pinned_dofs_dirty is set
+  // (at initialization and after every mesh refinement), then reused by
+  // add_extra_constraints on every solve. See recompute_pinned_dofs.
+  std::vector<types::global_dof_index> pinned_phasefield_dofs;
+  bool pinned_dofs_dirty = true;
+  void recompute_pinned_dofs(Controller<dim> &ctl);
 
   std::unique_ptr<Degradation<dim> > degradation;
   std::unique_ptr<FatigueDegradation<dim> > fatigue_degradation;
@@ -375,6 +387,102 @@ void PhaseField<dim>::enforce_phase_field_limitation(Controller<dim> &ctl) {
 
   distributed_solution.compress(VectorOperation::insert);
   this->solution = distributed_solution;
+}
+
+template<int dim>
+void PhaseField<dim>::recompute_pinned_dofs(Controller<dim> &ctl) {
+  pinned_phasefield_dofs.clear();
+  const double d = ctl.params.fix_phasefield_near_boundary_distance;
+  // Disabled, or no BC-carrying boundary to pin near.
+  if (d < 0 || ctl.bc_boundary_ids.empty())
+    return;
+
+  MappingQ1<dim> mapping;
+  const std::vector<Point<dim> > &unit_support_points =
+      (this->fe).get_unit_support_points();
+  AssertThrow(!unit_support_points.empty(),
+              ExcMessage("Phase-field FE has no unit support points; cannot use "
+                         "'Fix phase field near boundary'."));
+  std::vector<types::global_dof_index> local_dof_indices(
+    (this->fe).dofs_per_cell);
+
+  // 1. Seed points: vertices of boundary faces that carry a BC. These lie
+  // exactly on the loaded/constrained boundary of the shared mesh.
+  std::vector<Point<dim> > local_seeds;
+  for (const auto &cell: (this->dof_handler).active_cell_iterators()) {
+    if (cell->is_artificial())
+      continue;
+    for (const auto &face: cell->face_iterators()) {
+      if (face->at_boundary() &&
+          ctl.bc_boundary_ids.count(face->boundary_id())) {
+        for (unsigned int v = 0; v < face->n_vertices(); ++v)
+          local_seeds.push_back(face->vertex(v));
+      }
+    }
+  }
+
+  // 2. Gather seeds across ranks: a locally-relevant phase-field node may sit
+  // near a BC face owned by another rank. Determinism of the full seed set is
+  // what keeps the pinned set consistent on every rank.
+  std::vector<Point<dim> > seeds;
+  for (const auto &chunk:
+       Utilities::MPI::all_gather(ctl.mpi_com, local_seeds))
+    seeds.insert(seeds.end(), chunk.begin(), chunk.end());
+  if (seeds.empty())
+    return;
+
+  // 3. Collect every locally-relevant phase-field DOF within distance d of any
+  // seed. Iterating non-artificial (owned + ghost) cells covers all
+  // locally-relevant DOFs, so the pinned set is identical across ranks. Hanging
+  // nodes are intentionally kept here and filtered at apply time, since the
+  // hanging-node constraints are rebuilt on every solve.
+  std::set<types::global_dof_index> pinned;
+  for (const auto &cell: (this->dof_handler).active_cell_iterators()) {
+    if (cell->is_artificial())
+      continue;
+    cell->get_dof_indices(local_dof_indices);
+    for (unsigned int i = 0; i < (this->fe).dofs_per_cell; ++i) {
+      if (!this->dof_is_this_field(i, "phasefield"))
+        continue;
+      const types::global_dof_index idx = local_dof_indices[i];
+      if (!(this->locally_relevant_dofs).is_element(idx) ||
+          pinned.count(idx))
+        continue;
+      const Point<dim> p =
+          mapping.transform_unit_to_real_cell(cell, unit_support_points[i]);
+      for (const auto &seed: seeds) {
+        if (p.distance(seed) <= d) {
+          pinned.insert(idx);
+          break;
+        }
+      }
+    }
+  }
+  pinned_phasefield_dofs.assign(pinned.begin(), pinned.end());
+}
+
+template<int dim>
+void PhaseField<dim>::add_extra_constraints(Controller<dim> &ctl) {
+  const double d = ctl.params.fix_phasefield_near_boundary_distance;
+  if (d < 0 || ctl.bc_boundary_ids.empty())
+    return;
+
+  // The pinned set only depends on the mesh, so recompute it (an MPI collective
+  // plus a geometric sweep) only at initialization and after refinement; every
+  // other solve just re-applies the cached lines.
+  if (pinned_dofs_dirty) {
+    recompute_pinned_dofs(ctl);
+    pinned_dofs_dirty = false;
+  }
+
+  for (const types::global_dof_index idx: pinned_phasefield_dofs) {
+    // Skip DOFs already constrained this solve (hanging nodes); their value is
+    // already determined by interpolation from the parent DOFs.
+    if ((this->constraints_all).is_constrained(idx))
+      continue;
+    (this->constraints_all).add_line(idx);
+    (this->constraints_all).set_inhomogeneity(idx, 0.0);
+  }
 }
 
 #endif // CRACKS_PHASE_FIELD_H

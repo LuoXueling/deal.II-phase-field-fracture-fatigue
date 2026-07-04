@@ -8,6 +8,7 @@
 #include "dealii_includes.h"
 #include "parameters.h"
 #include "utils.h"
+#include <set>
 
 class PointHistory : public TransferableQuadraturePointData {
 public:
@@ -286,6 +287,9 @@ public:
   TableHandler statistics;
 
   std::vector<int> boundary_ids;
+  // Boundary ids that carry a Dirichlet/Neumann BC (subset of boundary_ids),
+  // used by the "Fix phase field near boundary" feature.
+  std::set<unsigned int> bc_boundary_ids;
 
   CellDataStorage<typename Triangulation<dim>::cell_iterator, PointHistory>
       quadrature_point_history, old_quadrature_point_history,
