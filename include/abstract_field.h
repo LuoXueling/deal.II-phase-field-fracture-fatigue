@@ -52,6 +52,11 @@ public:
 
   virtual void setup_dirichlet_boundary_condition(Controller<dim> &ctl);
 
+  // Hook to append extra constraints to constraints_all before it is closed in
+  // setup_dirichlet_boundary_condition. Default: no-op. Overridden by PhaseField
+  // to pin phi=0 near boundary-condition regions.
+  virtual void add_extra_constraints(Controller<dim> &ctl) {}
+
   virtual void
   setup_neumann_boundary_condition(LA::MPI::BlockVector &neumann_rhs,
                                    Controller<dim> &ctl);
@@ -311,6 +316,7 @@ void AbstractField<dim>::setup_dirichlet_boundary_condition(
                                std::to_string(std::get<2>(info))]);
     }
   }
+  add_extra_constraints(ctl);
   constraints_all.close();
 }
 

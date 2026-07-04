@@ -58,6 +58,22 @@ template<int dim>
 void PhaseFieldFracture<dim>::setup_system() {
   this->ctl.debug_dcout << "Initialize system - elasticity" << std::endl;
   elasticity.setup_system(this->ctl);
+  // Collect the boundary ids that carry a Dirichlet/Neumann BC so the phase
+  // field can pin phi=0 near them (see PhaseField::add_extra_constraints).
+  // Must be populated before phasefield.setup_system, which rebuilds the
+  // phase-field constraints.
+  if ((this->ctl).params.fix_phasefield_near_boundary_distance >= 0) {
+    (this->ctl).bc_boundary_ids.clear();
+    for (auto &kv : elasticity.fields.dirichlet_boundary_info)
+      for (auto &info : kv.second)
+        (this->ctl).bc_boundary_ids.insert(std::get<0>(info));
+    for (auto &kv : elasticity.fields.neumann_boundary_info)
+      for (auto &info : kv.second)
+        (this->ctl).bc_boundary_ids.insert(std::get<0>(info));
+    // The mesh just changed (initialization or refinement), so the cached set of
+    // phase-field DOFs to pin is stale; force a recompute on the next solve.
+    phasefield.pinned_dofs_dirty = true;
+  }
   if ((this->ctl).params.enable_phase_field) {
     this->ctl.debug_dcout << "Initialize system - phase field" << std::endl;
     phasefield.setup_system(this->ctl);
