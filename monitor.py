@@ -563,8 +563,18 @@ if __name__ == "__main__":
                 next_para[name] = initial_params
 
         # Write new parameters
-        t = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         project_name = re.findall(r"Project name = (.*?)\n", s)[0]
+        # The output folder name is derived from the timestamp t. Make sure it does
+        # not collide with an existing folder before deriving the .prm file name.
+        while True:
+            t = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            output_path = f"output/{project_name}-{t}"
+            if not os.path.exists(output_path):
+                break
+            log(
+                f"Output folder {output_path} already exists. Waiting 2 seconds before retrying."
+            )
+            time.sleep(2)
         _next_para = next_para.copy()
         _next_para.update({"Output sub-directory": f"{project_name}-{t}"})
         if "Output sub-directory" not in s:
@@ -573,7 +583,6 @@ if __name__ == "__main__":
                 "subsection Project\n  set Output sub-directory = \n  ",
             )
         s_out = tune_parameter(s, _next_para)
-        output_path = f"output/{project_name}-{t}"
         current_para_path = (
             current_para_path.split(".prm")[0].split("_T_")[0] + f"_T_{t}.prm"
         )
@@ -615,7 +624,8 @@ if __name__ == "__main__":
                         )
                         break
                     except:
-                        pass
+                        time.sleep(0.5)
+                res.drop_duplicates(subset="Step-Out", keep="last", inplace=True)
                 if len(res) > last_no_records:
                     log(
                         f"log-results.txt updated. Current # of records: {len(res)}. Cycle: {list(res['Step-Out'])[-1]}. Crack length integration: {list(res['Crack-length'])[-1]}. Maximum phi: {list(res['Max-phi'])[-1]}"
@@ -636,7 +646,6 @@ if __name__ == "__main__":
             # Anomaly detected and the process is terminated
             else:
                 if res is not None and len(res) > last_no_records:
-                    res.drop_duplicates(subset="Step-Out", keep="last", inplace=True)
                     if is_last_point_anomaly(
                         list(res["Step-Out"]), list(res["Crack-length"])
                     ):

@@ -20,6 +20,8 @@ subsection Runtime
   set Timestep size to switch to = 1
   set Switch timestep after steps = 1
 
+  set Maximum crack length = 10
+
   # Solver
   set Use Direct Inner Solver = true
   set Use Direct Inner Solver type = Amesos_Mumps
