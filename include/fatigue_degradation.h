@@ -269,27 +269,26 @@ public:
       lqph->update("phi1", lqph->get_latest("Phase field", 0.0));
     } else if (std::abs(subcycle - 4) < 1e-8) {
       lqph->update("y0", lqph->get_latest("Fatigue history", 0.0));
-      double phi2 = lqph->get_initial("phi2", 0.0);
-      double phi1 = lqph->get_initial("phi1", 0.0);
-      double phi0 = lqph->get_latest("Phase field", 0.0);
-      if (phi0 < 1e-2 && (phi0 <= phi1 * (1 + 1e-6) || phi1 <= phi2 * (1 + 1e-6))) {
+      double phi2 = std::max(lqph->get_initial("phi2", 0.0), 1e-10);
+      double phi1 = std::max(lqph->get_initial("phi1", 0.0), 1e-10);
+      double phi0 = std::max(lqph->get_latest("Phase field", 0.0), 1e-10);
+      if (phi0 < 1e-1 && (phi0 <= phi1 * (1 + 1e-6) || phi1 <= phi2 * (1 + 1e-6))) {
         // The point is subject to minor numerical error, or they are not updated.
         lqph->update("n_jump_local", max_jump);
       } else {
         double n_jump_local = 1;
-        while ((n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (phi0 - 2 * phi1 + phi2) <= (
-                 phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0) {
-          n_jump_local++;
-          if (n_jump_local >= max_jump) {
-            break;
+        if (phi0 - 2 * phi1 + phi2 < 0) {
+          lqph->update("n_jump_local", max_jump);
+        } else {
+          while ((n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (phi0 - 2 * phi1 + phi2) <= (
+                  phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0) {
+            n_jump_local++;
+            if (n_jump_local >= max_jump) {
+              break;
+            }
           }
+          lqph->update("n_jump_local", n_jump_local);
         }
-        // ctl.dcout << n_jump_local << " " << (n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (
-        // phi0 - 2 * phi1 + phi2) << " " << (
-        // phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0 << " " << phi0 << " " << phi1 << " "
-        // <<
-        // phi2 << std::endl;
-        lqph->update("n_jump_local", n_jump_local);
       }
     }
   }

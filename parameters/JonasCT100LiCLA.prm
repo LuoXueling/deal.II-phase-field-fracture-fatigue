@@ -1,7 +1,7 @@
 subsection Project
-  set Project name = JonasCT10
+  set Project name = JonasCT100
   set Mesh from = ../meshes/CT022L5.inp
-  set Boundary from = ../meshes/JonasCT10_boundary.txt
+  set Boundary from = ../meshes/JonasCT100_boundary.txt
   set Output directory = ../output/
   set Load sequence from = script
   set Enable phase field = true
@@ -15,16 +15,16 @@ subsection Runtime
   # Time step
   set Adaptive timestep = LiCycleJump
   set Adaptive timestep parameters = 0 1 1000
-  set Max No of timesteps = 40000000
+  set Max No of timesteps = 10000
   set Timestep size = 0.25
-  set Timestep size to switch to = 0.25
+  set Timestep size to switch to = 1
   set Switch timestep after steps = 1
 
   set Maximum crack length = 30
 
   # Solver
   set Use Direct Inner Solver = true
-  set Newton lower bound = 1.0e-7
+  set Newton lower bound = 1.0e-6
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
@@ -39,7 +39,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1.0e-7
+  set Residual tolerance of multipass = 1e-6
   set Quit multipass if residual increasing = false
 
   # "linear" to solve K_phi * phi = r_phi
@@ -63,7 +63,7 @@ subsection Material
     set Plane state = stress
     set Fatigue degradation = CarraraAsymptotic
     set Fatigue degradation parameters = 60
-    set Fatigue accumulation = Li
+    set Fatigue accumulation = LiCLA
     set Fatigue accumulation parameters = 0 0.5
 end
 
