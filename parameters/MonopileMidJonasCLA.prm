@@ -20,9 +20,11 @@ subsection Runtime
   set Timestep size to switch to = 1
   set Switch timestep after steps = 1
 
+  set Maximum crack length = 0.18
+
   # Solver
-  set Use Direct Inner Solver = false
-  set Use Direct Inner Solver type = Amesos_Klu
+  set Use Direct Inner Solver = true
+  set Use Direct Inner Solver type = Amesos_MUMPS
   set Newton lower bound = 1.0e-4
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999

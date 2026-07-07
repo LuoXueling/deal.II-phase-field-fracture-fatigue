@@ -20,13 +20,13 @@ subsection Runtime
   set Timestep size to switch to = 0.25
   set Switch timestep after steps = 1
 
-  set Maximum crack length = 10
+  set Maximum crack length = 5
   set Fix phase field near boundary = 1
 
   # Solver
   set Use Direct Inner Solver = true
   set Use Direct Inner Solver type = Amesos_Mumps
-  set Newton lower bound = 1.0e-10
+  set Newton lower bound = 1.0e-8
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
@@ -42,7 +42,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-8
+  set Residual tolerance of multipass = 1e-4
   set Quit multipass if residual increasing = true
 
   # "linear" to solve K_phi * phi = r_phi
