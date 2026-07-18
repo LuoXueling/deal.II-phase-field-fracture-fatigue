@@ -360,6 +360,10 @@ public:
           GlobalEstimator::min<dim>("n_jump_local", 1, ctl);
 
       n_jump = std::max(static_cast<unsigned int>(std::floor(n_jump_temp)), static_cast<unsigned int>(1));
+      if (GlobalEstimator::max<dim>("Phase field", 0.0, ctl) < 0.1) {
+        n_jump = static_cast<unsigned int>(
+          std::ceil(static_cast<double>(max_jumps) / 10.0));
+      }
       ctl.set_info("N jump", n_jump);
       ctl.dcout << "Doing cycle jumping in this timestep: jumping " << n_jump
           << " cycles" << std::endl;

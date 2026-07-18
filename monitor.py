@@ -260,15 +260,15 @@ changable_parameters = {
         "Adaptive timestep parameters": {
             3: {
                 "name": "max_jump",
-                "range": [N_propagate // 2],  # Could be a super large number
+                "range": [1, 5*N_propagate],  # Could be a super large number
                 "type": int,
-                "ratio": 1,
+                "ratio": 0.5,
             },
         },
         "Fatigue accumulation parameters": {
             2: {
                 "name": "chi_cr",
-                "range": [0.01, 1],
+                "range": [0.01, 10],
                 "type": float,
                 "ratio": 0.5,
             }
@@ -278,15 +278,15 @@ changable_parameters = {
         "Adaptive timestep parameters": {
             3: {
                 "name": "max_jump",
-                "range": [N_propagate // 2],  # Could be a super large number
+                "range": [1, 5*N_propagate],  # Could be a super large number
                 "type": int,
-                "ratio": 1,
+                "ratio": 0.5,
             },
         },
         "Fatigue accumulation parameters": {
             2: {
                 "name": "chi_cr",
-                "range": [0.01, 1],
+                "range": [0.01, 10],
                 "type": float,
                 "ratio": 0.5,
             }
