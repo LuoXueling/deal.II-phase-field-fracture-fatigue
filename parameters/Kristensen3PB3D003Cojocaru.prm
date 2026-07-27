@@ -34,7 +34,7 @@ subsection Runtime
   set Adjustment method = KristensenModifiedNewton
   set Adjustment method for elasticity = KristensenModifiedNewton
   set Parameters of line search = 0.2
-  set Parameters of modified newton = 25 100
+  set Parameters of modified newton = 10 10
 
   set Save vtk per step = 100
 
@@ -42,7 +42,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-4
+  set Residual tolerance of multipass = 5e-6
   set Quit multipass if residual increasing = true
 
   # "linear" to solve K_phi * phi = r_phi

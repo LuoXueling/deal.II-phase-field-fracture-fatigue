@@ -645,7 +645,7 @@ if __name__ == "__main__":
                     break
             # Anomaly detected and the process is terminated
             else:
-                if res is not None and len(res) > last_no_records:
+                if res is not None and len(res) > last_no_records and specimen in supported_specimen.keys():
                     if is_last_point_anomaly(
                         list(res["Step-Out"]), list(res["Crack-length"])
                     ):
@@ -669,8 +669,8 @@ if __name__ == "__main__":
             if res is not None and len(res) > last_no_records:
                 last_no_records = len(res)
             # The job is gonna be terminated by HPC
-            if (time.time() - job_start_time) / 60 / 60 / 24 > 4.95:
-                log("Reaching 5 days. Terminating the job.")
+            if (time.time() - job_start_time) / 60 / 60 / 24 > 6.95:
+                log("Reaching 7 days. Terminating the job.")
                 proc.kill()
                 sys.exit(0)
             time.sleep(1)

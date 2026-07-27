@@ -24,7 +24,7 @@ subsection Runtime
 
   # Solver
   set Use Direct Inner Solver = true
-  set Use Direct Inner Solver type = Amesos_MUMPS
+  set Use Direct Inner Solver type = Amesos_Mumps
   set Newton lower bound = 1.0e-4
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
