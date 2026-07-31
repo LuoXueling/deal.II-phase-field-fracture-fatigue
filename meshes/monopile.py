@@ -1,18 +1,43 @@
 # -*- coding: mbcs -*-
+#
+# Monopile OWT. The mesh is no longer built inside Abaqus: it is imported from
+# gmsh (monopile_gmsh.geo), which produces an UNSTRUCTURED C3D4 mesh graded on
+# the load-facing side of both loaded ends.
+#
+# Usage:
+#   gmsh monopile_gmsh.geo -3 -format inp -o monopile_gmsh.inp
+#   abq2022 cae noGUI=monopile.py [-- <mesh>.inp]
+#
+# Sections 2 (parameters), 3 (helpers) and 8 (assembly & loads) are unchanged
+# from the original hex script. Sections 4-7 -- geometry, partitioning, surface
+# picking and hex seeding -- are replaced by the import plus a surface rebuild,
+# because an orphan mesh has no geometric faces for findAt to pick.
 from abaqus import *
 from abaqusConstants import *
+from caeModules import *
 import regionToolset
 import mesh
 import assembly
 import math
+import os
+import sys
 
 # -------------------------------------------------------------------
 # 1. INITIALIZATION
 # -------------------------------------------------------------------
-model_name = 'OWT_Final_Fixed_Bias_InnerOuter'
+INP_IN = 'monopile_gmsh.inp'          # produced by monopile_gmsh.geo
+for _a in sys.argv[1:]:
+    if _a.lower().endswith('.inp'):
+        INP_IN = _a
+        break
+if not os.path.exists(INP_IN):
+    raise IOError("%s not found -- run:\n"
+                  "  gmsh monopile_gmsh.geo -3 -format inp -o %s" % (INP_IN, INP_IN))
+
+model_name = 'OWT_' + os.path.splitext(os.path.basename(INP_IN))[0]
 if model_name in mdb.models:
     del mdb.models[model_name]
-my_model = mdb.Model(name=model_name)
+my_model = mdb.ModelFromInputFile(name=model_name, inputFileName=INP_IN)
 
 # -------------------------------------------------------------------
 # 2. PARAMETERS
@@ -48,10 +73,8 @@ R_rotor   = D_rotor / 2.0
 A_rotor   = math.pi * R_rotor**2
 V_rated   = 11.4     
 
-# Meshing
-max_size = 0.5
-mid_size = 0.1
-min_size = 0.01
+# (The old hex seeding sizes -- max/mid/min_size -- are gone: the mesh now
+# comes from gmsh, so element sizing lives in monopile_gmsh.geo.)
 
 # -------------------------------------------------------------------
 # 3. HELPER FUNCTIONS
@@ -95,207 +118,193 @@ wave_tr_val = calc_wave_traction_stress()
 rna_tr_thrust, rna_tr_weight = calc_rna_tractions()
 
 # -------------------------------------------------------------------
-# 4. GEOMETRY
+# 4. IMPORTED MESH  (replaces the old GEOMETRY / PARTITIONING / SEEDING)
 # -------------------------------------------------------------------
-p = my_model.Part(name='OWT_NoEmbed', dimensionality=THREE_D, type=DEFORMABLE_BODY)
-d = p.datums
-plane_yz = p.DatumPlaneByPrincipalPlane(principalPlane=YZPLANE, offset=0.0)
-axis_z = p.DatumAxisByPrincipalAxis(principalAxis=ZAXIS)
-t = p.MakeSketchTransform(sketchPlane=d[plane_yz.id], sketchUpEdge=d[axis_z.id], 
-                          sketchPlaneSide=SIDE1, origin=(0.0, 0.0, 0.0))
-s = my_model.ConstrainedSketch(name='profile', sheetSize=200.0, transform=t)
-s.ConstructionLine(point1=(0.0, -200.0), point2=(0.0, 200.0))
-
-r_p_out    = D_pile / 2.0
-r_p_in     = r_p_out - t_pile
-r_tw_b_in  = (D_base / 2.0) - t_tower
-r_tw_t_out = D_top / 2.0
-r_tw_t_in  = r_tw_t_out - t_tower
-
-s.Line(point1=(r_p_in, z_mudline), point2=(r_p_in, z_mwl))       
-s.Line(point1=(r_tw_b_in, z_mwl), point2=(r_tw_t_in, z_hub))     
-s.Line(point1=(r_tw_t_in, z_hub), point2=(r_tw_t_out, z_hub))    
-s.Line(point1=(r_tw_t_out, z_hub), point2=(r_p_out, z_mwl))      
-s.Line(point1=(r_p_out, z_mwl), point2=(r_p_out, z_mudline))     
-s.Line(point1=(r_p_out, z_mudline), point2=(r_p_in, z_mudline))  
-
-p.BaseSolidRevolve(sketch=s, angle=360.0, flipRevolveDirection=OFF)
-del s
-
-# -------------------------------------------------------------------
-# 5. PARTITIONING
-# -------------------------------------------------------------------
-# Structural Levels
 z_struct = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
-# Mesh Refinement Partitions (2m from Top and Bottom)
-z_mesh = [-28.0, 85.0]
+tower_levels = z_struct + [z_hub]
 
-all_z_cuts = sorted(z_struct + z_mesh)
+def get_inner_radius(z):
+    return get_outer_radius(z) - (t_pile if z <= 0.0 else t_tower)
 
-for z_lev in all_z_cuts:
-    pt = p.DatumPlaneByPrincipalPlane(principalPlane=XYPLANE, offset=z_lev)
-    p.PartitionCellByDatumPlane(datumPlane=p.datums[pt.id], cells=p.cells)
+p = my_model.parts[my_model.parts.keys()[0]]
+print("imported: %d nodes, %d elements" % (len(p.nodes), len(p.elements)))
 
-# Circumferential Partition (X=0)
-plane_x0 = p.DatumPlaneByPrincipalPlane(principalPlane=YZPLANE, offset=0.0)
-p.PartitionCellByDatumPlane(datumPlane=p.datums[plane_x0.id], cells=p.cells)
-
-# -------------------------------------------------------------------
-# 6. SURFACES
-# -------------------------------------------------------------------
-# Surf-1: Bottom Face
-faces_bot = p.faces.getByBoundingBox(zMin=z_mudline-0.1, zMax=z_mudline+0.1)
-p.Surface(side1Faces=faces_bot, name='Surf-1')
-p.Set(faces=faces_bot, name='Set-Mudline')
-
-# Surf-2: Top Face
-faces_top = p.faces.getByBoundingBox(zMin=z_hub-0.1, zMax=z_hub+0.1)
-p.Surface(side1Faces=faces_top, name='Surf-2')
-
-# Surf-3: Windward Pile (Split at -28.0)
-pt_pile_bot = (-r_p_out, 0.0, -29.0)
-pt_pile_main = (-r_p_out, 0.0, -14.0)
-f_p_w = p.faces.findAt( (pt_pile_bot,), (pt_pile_main,) )
-p.Surface(side1Faces=f_p_w, name='Surf-3')
-
-# Surf-4 to Surf-12: Windward Tower Segments
-tower_levels = z_struct + [z_hub] 
-surf_counter = 4
-
-for i in range(len(tower_levels)-1):
-    z_b = tower_levels[i]
-    z_t = tower_levels[i+1]
-    
-    pick_points = []
-    
-    # Check if split at 85.0
-    if abs(z_b - 80.0) < 0.1 and abs(z_t - 87.0) < 0.1:
-        # Split: 80-85 and 85-87
-        z_pick1 = 82.5; r_pick1 = get_outer_radius(z_pick1)
-        pick_points.append( (-r_pick1, 0.0, z_pick1) )
-        z_pick2 = 86.0; r_pick2 = get_outer_radius(z_pick2)
-        pick_points.append( (-r_pick2, 0.0, z_pick2) )
-    else:
-        # Standard
-        z_pick = (z_b + z_t) / 2.0; r_pick = get_outer_radius(z_pick)
-        pick_points.append( (-r_pick, 0.0, z_pick) )
-        
-    args = []
-    for pt in pick_points: args.append((pt,))
-    f_seg = p.faces.findAt(*args)
-    p.Surface(side1Faces=f_seg, name='Surf-%d' % surf_counter)
-    surf_counter += 1
+# gmsh also writes the 1D/2D entities (T3D2 truss, CPS3 shell). Only the C3D4
+# tets are wanted -- the rest would add spurious stiffness and mass.
+junk = [e for e in p.elements if e.type != C3D4]
+if len(junk) > 0:
+    p.SetFromElementLabels(name='_junk', elementLabels=tuple([e.label for e in junk]))
+    p.deleteElement(elements=p.sets['_junk'], deleteUnreferencedNodes=ON)
+    print("removed %d non-solid elements" % len(junk))
+print("after cleanup: %d nodes, %d elements" % (len(p.nodes), len(p.elements)))
+p.Set(elements=p.elements, name='Set-All')
 
 # -------------------------------------------------------------------
-# 7. MESHING & SEEDING (FIXED BIAS KEYWORDS + INNER/OUTER ARCS)
+# 5. SURFACES  (rebuilt from element faces -- an orphan mesh has no faces
+#               for findAt to pick)
+# -------------------------------------------------------------------
+# A tet face shared by two elements is interior; a face owned by exactly one
+# element is on the boundary. Abaqus C3D4 face numbering:
+FACE_NODES = {1: (0, 1, 2), 2: (0, 3, 1), 3: (1, 3, 2), 4: (0, 2, 3)}
+
+coord = {}
+for n in p.nodes:
+    coord[n.label] = n.coordinates
+
+face_count = {}
+face_owner = {}
+for el in p.elements:
+    labels = [p.nodes[c].label for c in el.connectivity]
+    for fid, idx in FACE_NODES.items():
+        key = tuple(sorted([labels[i] for i in idx]))
+        face_count[key] = face_count.get(key, 0) + 1
+        face_owner[key] = (el.label, fid)
+exterior = [(k, face_owner[k]) for k, c in face_count.items() if c == 1]
+print("exterior faces: %d" % len(exterior))
+
+def face_centroid(key):
+    pts = [coord[l] for l in key]
+    return (sum([q[0] for q in pts]) / 3.0,
+            sum([q[1] for q in pts]) / 3.0,
+            sum([q[2] for q in pts]) / 3.0)
+
+def face_area(key):
+    pts = [coord[l] for l in key]
+    a1 = [pts[1][i] - pts[0][i] for i in range(3)]
+    b1 = [pts[2][i] - pts[0][i] for i in range(3)]
+    cr = (a1[1]*b1[2] - a1[2]*b1[1], a1[2]*b1[0] - a1[0]*b1[2], a1[0]*b1[1] - a1[1]*b1[0])
+    return 0.5 * math.sqrt(sum([q*q for q in cr]))
+
+def on_outer_wall(key):
+    """Per-NODE vote against the wall at that node's own z.
+
+    Not a centroid test: on a curved, tapered wall the face centroid sits
+    inboard of BOTH surfaces by the chord sagitta, which here exceeds half the
+    0.060 wall, so a centroid test rejects nearly every genuine outer face.
+    """
+    votes = 0
+    for l in key:
+        x, y, z = coord[l]
+        r = math.hypot(x, y)
+        if abs(r - get_outer_radius(z)) <= abs(r - get_inner_radius(z)):
+            votes += 1
+    return votes >= 2
+
+def face_is_flat_at(key, z_plane):
+    """True only if EVERY node of the face lies on the z_plane end cap.
+
+    A centroid-distance test does not work. With a 0.05 m tolerance and coarse
+    elements nothing but the cap is close enough, but once the cap is refined
+    the wall faces just inside the end plane also fall within the tolerance and
+    get swallowed into Surf-1/Surf-2 -- which inflated those annuli by 57% and,
+    since they carry the RNA tractions, applied 14-17% too much total load.
+    """
+    for l in key:
+        if abs(coord[l][2] - z_plane) > 1.0e-6:
+            return False
+    return True
+
+# Bucket every exterior face into the surface it belongs to, using the same
+# geometric criteria the original findAt pick points encoded: the loaded
+# surfaces are on the OUTER wall, on the -X (load-facing) half, in their z band.
+buckets = {}
+for key, owner in exterior:
+    cx, cy, cz = face_centroid(key)
+    if face_is_flat_at(key, z_mudline):
+        buckets.setdefault('Surf-1', []).append(owner)      # mudline annulus
+        continue
+    if face_is_flat_at(key, z_hub):
+        buckets.setdefault('Surf-2', []).append(owner)      # hub annulus
+        continue
+    if not on_outer_wall(key) or cx >= 0.0:
+        continue                                            # inner wall / leeward
+    if cz <= z_mwl:
+        buckets.setdefault('Surf-3', []).append(owner)      # windward pile
+        continue
+    for i in range(len(tower_levels) - 1):
+        if tower_levels[i] <= cz < tower_levels[i + 1]:
+            buckets.setdefault('Surf-%d' % (4 + i), []).append(owner)
+            break
+
+for name in sorted(buckets, key=lambda s: int(s.split('-')[1])):
+    by_face = {}
+    for elabel, fid in buckets[name]:
+        by_face.setdefault(fid, []).append(elabel)
+    kwargs = {'name': name}
+    for fid, labels in by_face.items():
+        kwargs['face%dElements' % fid] = p.elements.sequenceFromLabels(labels)
+    p.Surface(**kwargs)
+
+print("surfaces built: %d -> %s" % (len(p.surfaces),
+      sorted(p.surfaces.keys(), key=lambda s: int(s.split('-')[1]))))
+
+mud_nodes = p.nodes.getByBoundingBox(zMin=z_mudline - 0.01, zMax=z_mudline + 0.01)
+p.Set(nodes=mud_nodes, name='Set-Mudline')
+
+# --- ASSERT the loaded surfaces cover their bands, before any load is applied
+def analytic_band_area(z0, z1):
+    r0, r1 = get_outer_radius(z0), get_outer_radius(z1)
+    sl = math.sqrt((r1 - r0)**2 + (z1 - z0)**2)
+    return 0.5 * math.pi * (r0 + r1) * sl      # the -X half of the frustum
+
+area_of = {}
+owner_to_surf = {}
+for name, owners in buckets.items():
+    for o in owners:
+        owner_to_surf[o] = name
+for key, owner in exterior:
+    nm = owner_to_surf.get(owner)
+    if nm:
+        area_of[nm] = area_of.get(nm, 0.0) + face_area(key)
+
+expect = {'Surf-3': 0.5 * math.pi * D_pile * abs(z_mwl - z_mudline)}
+for i in range(len(tower_levels) - 1):
+    expect['Surf-%d' % (4 + i)] = analytic_band_area(tower_levels[i], tower_levels[i+1])
+# Surf-1 / Surf-2 MUST be checked too: they carry the RNA weight and thrust, by
+# far the largest tractions here, so an over-sized annulus silently rescales the
+# whole load case.
+expect['Surf-1'] = math.pi * ((D_pile/2.0)**2 - (D_pile/2.0 - t_pile)**2)
+expect['Surf-2'] = math.pi * ((D_top/2.0)**2 - (D_top/2.0 - t_tower)**2)
+
+print("--- surface coverage (actual vs analytic) ---")
+bad = 0
+for nm in sorted(expect, key=lambda s: int(s.split('-')[1])):
+    act = area_of.get(nm, 0.0)
+    exp = expect[nm]
+    ratio = act / exp if exp else 0.0
+    # 5% band: flat triangles chord a curved surface, so the meshed area lands a
+    # shade under analytic. A missing or doubled band shows up near 0 or 2.
+    ok = abs(ratio - 1.0) < 0.05
+    if not ok: bad += 1
+    print("  %-8s actual=%9.3f expected=%9.3f ratio=%.3f %s"
+          % (nm, act, exp, ratio, "OK" if ok else "<<< MISMATCH"))
+if bad:
+    raise ValueError("%d loaded surface(s) mis-built -- loads would be wrong." % bad)
+print("all loaded surfaces verified")
+
+# -------------------------------------------------------------------
+# 7. MATERIAL & SECTION
 # -------------------------------------------------------------------
 my_model.HomogeneousSolidSection(name='SteelSection', material='Steel', thickness=None)
 mat = my_model.Material(name='Steel')
 mat.Density(table=((rho_steel, ), ))
 mat.Elastic(table=((E_steel, nu_steel), ))
-
-p.Set(cells=p.cells, name='Set-All')
-p.SectionAssignment(region=p.sets['Set-All'], sectionName='SteelSection', thicknessAssignment=FROM_SECTION)
-
-p.setMeshControls(regions=p.cells, elemShape=HEX, technique=STRUCTURED)
-elemType = mesh.ElemType(elemCode=C3D8, elemLibrary=STANDARD)
-p.setElementType(regions=p.sets['Set-All'], elemTypes=(elemType,))
-
-# --- SEEDING ---
-
-# 1. Thickness Seeding (0.02 Uniform)
-all_cuts_mesh = [z_mudline, -28.0] + z_struct + [85.0, z_hub]
-for z in all_cuts_mesh:
-    # Select horizontal edges on X=0 plane
-    thick_edges = p.edges.getByBoundingBox(xMin=-0.01, xMax=0.01, zMin=z-0.01, zMax=z+0.01)
-    real_thick = [e for e in thick_edges if e.getSize() < 0.2]
-    if len(real_thick) > 0:
-        # Positional arg for edges
-        p.seedEdgeBySize(real_thick, size=min_size, constraint=FIXED)
-
-# 2. Axial Bias (Top/Bottom 2m)
-# Fix: Using 'end2Edges' to flip direction if 'end1Edges' was backwards
-
-def split_inner_outer(edges, z_mid):
-    inner = []
-    outer = []
-    r_outer_expected = get_outer_radius(z_mid)
-    for e in edges:
-        pt = e.pointOn[0]
-        r_actual = abs(pt[1])
-        if r_actual > (r_outer_expected - 0.03): outer.append(e)
-        else: inner.append(e)
-    return inner, outer
-
-# Bottom 2m (-30 to -28)
-edges_bot_2m = p.edges.getByBoundingBox(xMin=-0.01, xMax=0.01, zMin=-30.1, zMax=-27.9)
-real_bot_2m = [e for e in edges_bot_2m if e.getSize() > 1.0]
-
-if len(real_bot_2m) > 0:
-    inner_bot, outer_bot = split_inner_outer(real_bot_2m, -29.0)
-    
-    # Inner: Use end1Edges
-    if len(inner_bot) > 0:
-        p.seedEdgeByBias(biasMethod=SINGLE, end1Edges=inner_bot, 
-                         minSize=min_size, maxSize=max_size, constraint=FIXED)
-                         
-    # Outer: Use end2Edges (Flipped vs Inner)
-    if len(outer_bot) > 0:
-        p.seedEdgeByBias(biasMethod=SINGLE, end2Edges=outer_bot, 
-                         minSize=min_size, maxSize=max_size, constraint=FIXED)
-
-# Top 2m (85 to 87)
-edges_top_2m = p.edges.getByBoundingBox(xMin=-0.01, xMax=0.01, zMin=84.9, zMax=87.1)
-real_top_2m = [e for e in edges_top_2m if e.getSize() > 1.0]
-
-if len(real_top_2m) > 0:
-    inner_top, outer_top = split_inner_outer(real_top_2m, 86.0)
-    
-    # Inner: Use end2Edges
-    if len(inner_top) > 0:
-        p.seedEdgeByBias(biasMethod=SINGLE, end2Edges=inner_top, 
-                         minSize=min_size, maxSize=max_size, constraint=FIXED)
-                         
-    # Outer: Use end1Edges (Flipped vs Inner)
-    if len(outer_top) > 0:
-        p.seedEdgeByBias(biasMethod=SINGLE, end1Edges=outer_top, 
-                         minSize=min_size, maxSize=max_size, constraint=FIXED)
-
-# 3. Circumferential Double Bias
-# UPDATED: Select both Outer AND Inner arcs
-
-# Bottom Arc (-30)
-r_bot = D_pile / 2.0
-r_bot_in = r_bot - t_pile # Inner radius
-# Select outer (-r_bot) and inner (-r_bot_in) points
-arcs_bot = p.edges.findAt( ((-r_bot, 0.0, z_mudline), ), 
-                           ((-r_bot_in, 0.0, z_mudline), ) )
-
-if len(arcs_bot) > 0:
-    p.seedEdgeByBias(biasMethod=DOUBLE, centerEdges=arcs_bot, 
-                     minSize=min_size, maxSize=mid_size, constraint=FINER)
-
-# # Top Arc (87)
-# r_top_exact = get_outer_radius(z_hub)
-# r_top_in = r_top_exact - t_tower # Inner radius
-# # Select outer and inner points
-# arcs_top = p.edges.findAt( ((-r_top_exact, 0.0, z_hub), ), 
-#                            ((-r_top_in, 0.0, z_hub), ) )
-
-# if len(arcs_top) > 0:
-#     p.seedEdgeByBias(biasMethod=DOUBLE, centerEdges=arcs_top, 
-#                      minSize=min_size, maxSize=mid_size, constraint=FINER)
-
-# Global Seed
-p.seedPart(size=max_size, deviationFactor=0.1, minSizeFactor=0.1)
-
-p.generateMesh()
+p.SectionAssignment(region=p.sets['Set-All'], sectionName='SteelSection',
+                    thicknessAssignment=FROM_SECTION)
 
 # -------------------------------------------------------------------
 # 8. ASSEMBLY & LOADS
 # -------------------------------------------------------------------
 a = my_model.rootAssembly
 a.DatumCsysByDefault(CARTESIAN)
+
+# ModelFromInputFile already instances the imported part. Adding a second
+# instance leaves the FIRST one in the assembly unrestrained -- the BC below
+# pins only OWT-1, so the duplicate body floats free. That shows up as six
+# rigid body modes and the job dies with "numerical singularity" /
+# "too many attempts".
+for _nm in list(a.instances.keys()):
+    del a.instances[_nm]
 inst = a.Instance(name='OWT-1', part=p, dependent=ON)
 
 my_model.StaticStep(name='Step-Load', previous='Initial', nlgeom=ON)
@@ -322,4 +331,4 @@ for i in range(len(tower_levels)-1):
         my_model.SurfaceTraction(name=l_name, createStepName='Step-Load', region=surf_inst, distributionType=UNIFORM, directionVector=((0,0,0),(1,0,0)), magnitude=seg_tr_val, traction=GENERAL)
     surf_id += 1
 
-print("Model Loaded: Fixed Bias Direction & Added Inner Arcs to Selection.")
+print("Model Loaded: unstructured C3D4 mesh imported from gmsh.")

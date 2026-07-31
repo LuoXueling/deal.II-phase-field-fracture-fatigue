@@ -1,6 +1,6 @@
 subsection Project
   set Project name = Monopile
-  set Mesh from = ../meshes/monopile.inp
+  set Mesh from = ../meshes/monopile.msh
   set Boundary from = ../meshes/monopile_mid_boundary.txt
   set Output directory = ../output/
   set Load sequence from = script
@@ -20,12 +20,12 @@ subsection Runtime
   set Timestep size to switch to = 0.25
   set Switch timestep after steps = 1
 
-  set Maximum crack length = 0.18
+  set Maximum crack length = 0.24
 
   # Solver
   set Use Direct Inner Solver = true
   set Use Direct Inner Solver type = Amesos_Mumps
-  set Newton lower bound = 1.0e-4
+  set Newton lower bound = 1e-3
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
@@ -33,7 +33,7 @@ subsection Runtime
   set Adjustment method = KristensenModifiedNewton
   set Adjustment method for elasticity = KristensenModifiedNewton
   set Parameters of line search = 0.2
-  set Parameters of modified newton = 25 100
+  set Parameters of modified newton = 10 10
 
   set Save vtk per step = 100
 
@@ -41,7 +41,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-4
+  set Residual tolerance of multipass = 1e-1
   set Quit multipass if residual increasing = true
 
   # "linear" to solve K_phi * phi = r_phi
@@ -72,6 +72,7 @@ subsection Finite element system
   # Physical dimension
   set Physical dimension = 3
 
+  set Element type = tet
   # Displacement system polynomial order
   set Polynomial degree = 1
 
