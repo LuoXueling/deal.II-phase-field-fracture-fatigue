@@ -59,7 +59,7 @@ public:
 template<int dim>
 CellProcessor<dim>::CellProcessor(FESystem<dim> &fe, MultiFieldCfg<dim> &fields,
                                   Controller<dim> &ctl)
-  : fe_values(fe, ctl.quadrature_formula,
+  : fe_values(ctl.mapping(), fe, ctl.quadrature_formula,
               update_values | update_gradients | update_quadrature_points |
               update_JxW_values) {
 }

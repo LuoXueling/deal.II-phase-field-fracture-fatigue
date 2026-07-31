@@ -16,3 +16,7 @@ main
 cmake-build-debug
 .vscode
 /test
+
+# Abaqus scratch output
+fort.*
+*.exception

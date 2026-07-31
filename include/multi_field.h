@@ -70,8 +70,9 @@ MultiFieldCfg<dim>::MultiFieldCfg(std::vector<unsigned int> n_components_list,
        ++i_field) {
     unsigned int n_component = n_components_list[i_field];
     std::string name = names[i_field];
-    FE_Q_sequence.push_back(
-      new FE_Q<dim>(QGaussLobatto<1>(ctl.params.poly_degree + 1)));
+    // FE_Q for hypercubes, FE_SimplexP for tetrahedra. Released into the
+    // sequence as a raw owning pointer, matching how these were managed before.
+    FE_Q_sequence.push_back(ctl.make_scalar_fe().release());
     FE_Q_dim_sequence.push_back(n_component);
 
     component_start_indices[name] = processed_components;

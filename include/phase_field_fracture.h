@@ -206,12 +206,30 @@ void PhaseFieldFracture<dim>::respective_output_results(
 
 template<int dim>
 bool PhaseFieldFracture<dim>::refine_grid() {
+  // Adaptive refinement is p4est-only: both parallel::distributed::
+  // SolutionTransfer and ContinuousQuadratureDataTransfer below require a
+  // parallel::distributed::Triangulation, and deal.II cannot h-refine simplex
+  // meshes at all. Simplex runs therefore never refine.
+  auto *p4est_tria = dynamic_cast<parallel::distributed::Triangulation<dim> *>(
+    &(this->ctl).triangulation);
+  if (p4est_tria == nullptr) {
+    static bool warned = false;
+    if (!warned) {
+      (this->ctl).dcout
+          << "Warning: adaptive mesh refinement is not supported for simplex "
+             "meshes; 'Refine = true' is ignored for the rest of this run."
+          << std::endl;
+      warned = true;
+    }
+    return false;
+  }
+
   typename DoFHandler<dim>::active_cell_iterator
       cell = phasefield.dof_handler.begin_active(),
       endc = phasefield.dof_handler.end();
 
-  FEValues<dim> fe_values(phasefield.fe, (this->ctl).quadrature_formula,
-                          update_gradients);
+  FEValues<dim> fe_values((this->ctl).mapping(), phasefield.fe,
+                          (this->ctl).quadrature_formula, update_gradients);
 
   unsigned int n_q_points = (this->ctl).quadrature_formula.size();
   std::vector<Tensor<1, dim> > phasefield_grads(n_q_points);
@@ -257,7 +275,7 @@ bool PhaseFieldFracture<dim>::refine_grid() {
           QGauss<dim>((this->ctl).params.poly_degree + 1),
           QGauss<dim>((this->ctl).params.poly_degree + 1));
     point_history_transfer.prepare_for_coarsening_and_refinement(
-      (this->ctl).triangulation, (this->ctl).quadrature_point_history);
+      *p4est_tria, (this->ctl).quadrature_point_history);
 
     // Prepare transferring of fields
     parallel::distributed::SolutionTransfer<dim, LA::MPI::BlockVector>

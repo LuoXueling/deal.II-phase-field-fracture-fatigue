@@ -262,10 +262,59 @@ public:
 
   void set_info(std::string name, double value);
 
+  /**
+   * Mapping matching the reference cell: MappingQ1 for hypercubes (which is
+   * what the FEValues no-mapping overloads used implicitly before), and
+   * MappingFE(FE_SimplexP(1)) for simplices.
+   */
+  const Mapping<dim> &mapping() const { return *mapping_ptr; }
+
+  bool is_simplex() const { return reference_cell.is_simplex(); }
+
+  /**
+   * Quadrature on a face of the reference cell: QGauss<dim-1> for a hypercube
+   * face, QGaussSimplex<dim-1> for the triangular face of a tetrahedron.
+   */
+  Quadrature<dim - 1> face_quadrature() const {
+    return reference_cell.face_reference_cell(0)
+        .template get_gauss_type_quadrature<dim - 1>(params.poly_degree + 1);
+  }
+
+  /**
+   * A scalar element for one component, matching the reference cell. The
+   * caller takes ownership.
+   */
+  std::unique_ptr<FiniteElement<dim, dim> > make_scalar_fe() const {
+    if (is_simplex())
+      return std::make_unique<FE_SimplexP<dim> >(params.poly_degree);
+    return std::make_unique<FE_Q<dim> >(
+      QGaussLobatto<1>(params.poly_degree + 1));
+  }
+
   MPI_Comm mpi_com;
 
-  parallel::distributed::Triangulation<dim> triangulation;
-  QGauss<dim> quadrature_formula;
+  // Reference cell of the whole mesh, decided by params.element_type. Declared
+  // first because the triangulation, quadrature and mapping are all built from
+  // it, and members initialize in declaration order.
+  ReferenceCell reference_cell;
+
+  // Owns the triangulation: parallel::distributed (p4est, supports adaptive
+  // refinement) for hypercubes, parallel::fullydistributed for simplices,
+  // which p4est cannot represent. Both derive from
+  // parallel::DistributedTriangulationBase.
+  std::unique_ptr<parallel::DistributedTriangulationBase<dim> >
+  triangulation_ptr;
+  // Reference alias so that every `ctl.triangulation` use site reads exactly as
+  // it did when this was a concrete member.
+  parallel::DistributedTriangulationBase<dim> &triangulation;
+
+  // Base-class quadrature: QGaussSimplex is a sibling of QGauss, not a
+  // subclass, so this cannot be a concrete QGauss any more. For a hypercube it
+  // holds precisely the points and weights of QGauss<dim>(poly_degree + 1).
+  Quadrature<dim> quadrature_formula;
+
+  std::unique_ptr<Mapping<dim> > mapping_ptr;
+
   Parameters::AllParameters params;
 
   ConditionalOStream dcout;
@@ -300,11 +349,27 @@ public:
 
 template<int dim>
 Controller<dim>::Controller(Parameters::AllParameters &prms)
-  : mpi_com(MPI_COMM_WORLD), params(prms),
-    triangulation(mpi_com, typename Triangulation<dim>::MeshSmoothing(
-                    Triangulation<dim>::smoothing_on_refinement |
-                    Triangulation<dim>::smoothing_on_coarsening)),
-    quadrature_formula(prms.poly_degree + 1),
+  : mpi_com(MPI_COMM_WORLD),
+    reference_cell(prms.element_type == "tet"
+                     ? ReferenceCells::get_simplex<dim>()
+                     : ReferenceCells::get_hypercube<dim>()),
+    triangulation_ptr(
+      prms.element_type == "tet"
+        ? std::unique_ptr<parallel::DistributedTriangulationBase<dim> >(
+          std::make_unique<parallel::fullydistributed::Triangulation<dim> >(
+            mpi_com))
+        : std::unique_ptr<parallel::DistributedTriangulationBase<dim> >(
+          std::make_unique<parallel::distributed::Triangulation<dim> >(
+            mpi_com, typename Triangulation<dim>::MeshSmoothing(
+              Triangulation<dim>::smoothing_on_refinement |
+              Triangulation<dim>::smoothing_on_coarsening)))),
+    triangulation(*triangulation_ptr),
+    quadrature_formula(
+      reference_cell.template get_gauss_type_quadrature<dim>(
+        prms.poly_degree + 1)),
+    mapping_ptr(
+      reference_cell.template get_default_linear_mapping<dim>().clone()),
+    params(prms),
     fout(prms.output_dir + "log.txt"), sbuf(fout.rdbuf(), std::cout.rdbuf()),
     pout(&sbuf),
     dcout(pout, (dealii::Utilities::MPI::this_mpi_process(mpi_com) == 0)),

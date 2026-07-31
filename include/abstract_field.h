@@ -176,6 +176,12 @@ AbstractField<dim>::AbstractField(std::vector<unsigned int> n_components,
   else
     solver_ptr = std::make_unique<TrilinosWrappers::SolverDirect>(direct_solver_control, TrilinosWrappers::SolverDirect::AdditionalData(false, ctl.params.direct_solver_type));
   if (fe.n_components() == 1) {
+    // The least-squares fit behind this projection is underdetermined unless
+    // there are at least as many quadrature points as DoFs on the cell.
+    AssertThrow(ctl.quadrature_formula.size() >= fe.dofs_per_cell,
+                ExcMessage("Quadrature has fewer points than the cell has DoFs; "
+                  "the quadrature-point-to-node projection would be "
+                  "underdetermined."));
     FETools::compute_projection_from_quadrature_points_matrix(
       fe, ctl.quadrature_formula, ctl.quadrature_formula,
       qpoint_to_dof_matrix);
@@ -311,7 +317,8 @@ void AbstractField<dim>::setup_dirichlet_boundary_condition(
       std::unique_ptr<Function<dim> > dirichlet_boundary =
           select_dirichlet_boundary<dim>(info, fields.n_components, ctl.time);
       VectorTools::interpolate_boundary_values(
-        dof_handler, std::get<0>(info), *dirichlet_boundary, constraints_all,
+        ctl.mapping(), dof_handler, std::get<0>(info), *dirichlet_boundary,
+        constraints_all,
         fields.component_masks[it.first + "_" +
                                std::to_string(std::get<2>(info))]);
     }
@@ -326,11 +333,10 @@ void AbstractField<dim>::setup_neumann_boundary_condition(
   ctl.debug_dcout << "Setting neumann boundary" << std::endl;
   neumann_rhs = 0;
 
-  const QGauss<dim - 1> face_quadrature_formula(ctl.params.poly_degree +
-                                                1);
+  const Quadrature<dim - 1> face_quadrature_formula = ctl.face_quadrature();
   const unsigned int n_face_q_points = face_quadrature_formula.size();
   const unsigned int dofs_per_cell = fe.dofs_per_cell;
-  FEFaceValues<dim> fe_face_values(fe, face_quadrature_formula,
+  FEFaceValues<dim> fe_face_values(ctl.mapping(), fe, face_quadrature_formula,
                                    update_values | update_quadrature_points |
                                    update_JxW_values);
 

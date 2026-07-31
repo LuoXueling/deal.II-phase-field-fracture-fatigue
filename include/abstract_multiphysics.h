@@ -219,34 +219,118 @@ void AbstractMultiphysics<dim>::run() {
 
 template<int dim>
 void AbstractMultiphysics<dim>::setup_mesh() {
-  GridIn<dim> grid_in;
-  /**
-   * similar to normal use of GridIn.
-   */
-  grid_in.attach_triangulation(ctl.triangulation);
   if (!checkFileExsit(ctl.params.mesh_from)) {
     throw std::runtime_error("Mesh file does not exist");
   }
-  std::filebuf fb;
-  if (fb.open(ctl.params.mesh_from, std::ios::in)) {
-    std::istream is(&fb);
-    grid_in.read_abaqus(is);
-    fb.close();
+
+  if (ctl.is_simplex()) {
+    /**
+     * Simplex meshes cannot live in a p4est triangulation, so read the mesh
+     * serially on every rank and hand a partitioned description to a
+     * parallel::fullydistributed::Triangulation.
+     *
+     * The mesh must be a gmsh .msh file: GridIn::read_abaqus reads a fixed
+     * 1 + GeometryInfo<dim>::vertices_per_cell entries per element (i.e. 8
+     * nodes in 3D) and cannot read C3D4 tetrahedra at all. Convert an Abaqus
+     * .inp with meshes/inp2msh.py, which preserves *Surface -> boundary id.
+     */
+    auto *fd_tria =
+        dynamic_cast<parallel::fullydistributed::Triangulation<dim> *>(
+          &ctl.triangulation);
+    AssertThrow(fd_tria != nullptr, ExcInternalError());
+
+    AssertThrow(
+      ctl.params.mesh_from.size() >= 4 &&
+      ctl.params.mesh_from.compare(ctl.params.mesh_from.size() - 4, 4, ".msh") == 0,
+      ExcMessage("'Element type = tet' expects a gmsh .msh mesh, but 'Mesh "
+        "from' is '" + ctl.params.mesh_from + "'. deal.II cannot read "
+        "tetrahedra from an Abaqus .inp; convert it first with "
+        "meshes/inp2msh.py."));
+
+    Triangulation<dim> serial_tria;
+    {
+      GridIn<dim> grid_in;
+      grid_in.attach_triangulation(serial_tria);
+      std::ifstream input(ctl.params.mesh_from);
+      grid_in.read_msh(input);
+    }
+    GridTools::partition_triangulation(
+      dealii::Utilities::MPI::n_mpi_processes(ctl.mpi_com), serial_tria);
+    fd_tria->create_triangulation(
+      TriangulationDescription::Utilities::create_description_from_triangulation(
+        serial_tria, ctl.mpi_com));
+  } else {
+    GridIn<dim> grid_in;
+    /**
+     * similar to normal use of GridIn.
+     */
+    grid_in.attach_triangulation(ctl.triangulation);
+    std::filebuf fb;
+    if (fb.open(ctl.params.mesh_from, std::ios::in)) {
+      std::istream is(&fb);
+      grid_in.read_abaqus(is);
+      fb.close();
+    }
   }
   //  GridGenerator::hyper_cube(ctl.triangulation);
   //  ctl.triangulation.refine_global(5);
 
-  if (dim == 2) {
+  // The finite element, quadrature and mapping were all built from
+  // params.element_type before the mesh was read, so a mismatch here would
+  // otherwise surface as an obscure assertion deep inside FEValues.
+  {
+    unsigned int mismatched = 0;
+    for (const auto &cell: ctl.triangulation.active_cell_iterators())
+      if (cell->is_locally_owned() &&
+          cell->reference_cell() != ctl.reference_cell)
+        mismatched = 1;
+    AssertThrow(
+      dealii::Utilities::MPI::max(mismatched, ctl.mpi_com) == 0,
+      ExcMessage("The mesh does not consist of the cell type requested by "
+        "'Element type' in the parameter file."));
+  }
+
+  if (dim == 2 && !ctl.is_simplex()) {
     std::ofstream out(ctl.params.output_dir + "initial_grid.svg");
     GridOut grid_out;
     grid_out.write_svg(ctl.triangulation, out);
   }
 
   std::vector<int> boundary_ids;
+  ctl.debug_dcout << "Searching boundaries" << std::endl;
+  if (ctl.is_simplex()) {
+    /**
+     * get_coarse_mesh_description() only returns the locally stored coarse
+     * cells of a fullydistributed triangulation, so each rank would see a
+     * different set of ids. Sweep the boundary faces instead and take the
+     * union over all ranks.
+     */
+    std::set<int> local_ids;
+    for (const auto &cell: ctl.triangulation.active_cell_iterators())
+      if (cell->is_locally_owned())
+        for (const auto &face: cell->face_iterators())
+          if (face->at_boundary()) {
+            const int id = static_cast<int>(face->boundary_id());
+            if (id != 0 && id != -1)
+              local_ids.insert(id);
+          }
+    std::set<int> global_ids;
+    for (const auto &chunk: dealii::Utilities::MPI::all_gather(
+           ctl.mpi_com, std::vector<int>(local_ids.begin(), local_ids.end())))
+      global_ids.insert(chunk.begin(), chunk.end());
+    for (const int id: global_ids) {
+      ctl.debug_dcout << "Find id" + std::to_string(id) << std::endl;
+      boundary_ids.push_back(id);
+    }
+    ctl.boundary_ids = boundary_ids;
+    ctl.dcout << "Find " << ctl.triangulation.n_global_active_cells()
+        << " elements" << std::endl;
+    return;
+  }
+
   std::tuple<std::vector<Point<dim> >, std::vector<CellData<dim> >, SubCellData>
       info;
   info = GridTools::get_coarse_mesh_description(ctl.triangulation);
-  ctl.debug_dcout << "Searching boundaries" << std::endl;
   if (dim == 2) {
     for (const CellData<1> i: std::get<2>(info).boundary_lines) {
       int id = i.boundary_id;
@@ -310,7 +394,7 @@ void AbstractMultiphysics<dim>::output_results() {
   respective_output_results(data_out);
 
   ctl.debug_dcout << "Computing output - build patches" << std::endl;
-  data_out.build_patches();
+  data_out.build_patches(ctl.mapping());
   ctl.debug_dcout << "Computing output - writing" << std::endl;
   data_out.write_vtu_with_pvtu_record(ctl.params.output_dir, "solution",
                                       ctl.output_timestep_number, ctl.mpi_com,

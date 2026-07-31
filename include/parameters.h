@@ -314,6 +314,10 @@ namespace Parameters {
         unsigned int dim;
         unsigned int poly_degree;
         unsigned int quad_order;
+        // "hex" (quadrilateral in 2D, hexahedron in 3D) or "tet" (tetrahedron).
+        // Selects the reference cell, and with it the finite element,
+        // quadrature, mapping, triangulation type and mesh reader.
+        std::string element_type;
         bool refine;
         double refine_influence_initial;
         double refine_influence_final;
@@ -333,6 +337,15 @@ namespace Parameters {
 
             prm.declare_entry("Quadrature order", "3", Patterns::Integer(0),
                               "Gauss quadrature order");
+            prm.declare_entry("Element type", "hex",
+                              Patterns::Selection("hex|tet"),
+                              "Reference cell of the mesh. 'hex' (the default, "
+                              "quadrilateral in 2D / hexahedron in 3D) is read "
+                              "from an Abaqus .inp file and supports adaptive "
+                              "refinement. 'tet' (3D linear tetrahedra) is read "
+                              "from a gmsh .msh file (convert an Abaqus C3D4 "
+                              ".inp with meshes/inp2msh.py) and does not "
+                              "support adaptive refinement.");
             prm.declare_entry("Refine", "false", Patterns::Bool());
 
             prm.declare_entry("Phase field initial influential ratio (for refinement)",
@@ -350,6 +363,7 @@ namespace Parameters {
             dim = prm.get_integer("Physical dimension");
             poly_degree = prm.get_integer("Polynomial degree");
             quad_order = prm.get_integer("Quadrature order");
+            element_type = prm.get("Element type");
             refine = prm.get_bool("Refine");
             refine_influence_final =
                     prm.get_double("Phase field final influential ratio (for refinement)");
@@ -357,6 +371,22 @@ namespace Parameters {
                 "Phase field initial influential ratio (for refinement)");
             refine_minimum_size_ratio =
                     prm.get_double("Minimum relative size of refined cells w.r.t l_phi");
+
+            // Fail loudly on a combination we cannot honour, rather than
+            // silently ignoring the user's intent later on.
+            if (element_type == "tet") {
+                AssertThrow(dim == 3,
+                            ExcMessage("'Element type = tet' is only supported "
+                                "for 'Physical dimension = 3'."));
+                AssertThrow(poly_degree >= 1 && poly_degree <= 2,
+                            ExcMessage("'Element type = tet' requires "
+                                "'Polynomial degree' of 1 or 2; FE_SimplexP is "
+                                "not implemented for higher degrees."));
+                AssertThrow(!refine,
+                            ExcMessage("'Refine = true' is not supported for "
+                                "'Element type = tet': deal.II cannot adaptively "
+                                "refine simplex meshes. Set 'Refine = false'."));
+            }
         }
         prm.leave_subsection();
     }

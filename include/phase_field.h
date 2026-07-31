@@ -68,7 +68,7 @@ void PhaseField<dim>::assemble_linear_system(Controller<dim> &ctl) {
   (this->system_matrix)
       .block(this->block_id("phasefield"), this->block_id("phasefield")) = 0;
 
-  FEValues<dim> fe_values((this->fe), ctl.quadrature_formula,
+  FEValues<dim> fe_values(ctl.mapping(), (this->fe), ctl.quadrature_formula,
                           update_values | update_gradients |
                           update_quadrature_points | update_JxW_values);
 
@@ -187,7 +187,7 @@ void PhaseField<dim>::assemble_newton_system(bool residual_only,
         .block(this->block_id("phasefield"), this->block_id("phasefield")) = 0;
   }
 
-  FEValues<dim> fe_values((this->fe), ctl.quadrature_formula,
+  FEValues<dim> fe_values(ctl.mapping(), (this->fe), ctl.quadrature_formula,
                           update_values | update_gradients |
                           update_quadrature_points | update_JxW_values);
 
@@ -397,7 +397,7 @@ void PhaseField<dim>::recompute_pinned_dofs(Controller<dim> &ctl) {
   if (d < 0 || ctl.bc_boundary_ids.empty())
     return;
 
-  MappingQ1<dim> mapping;
+  const Mapping<dim> &mapping = ctl.mapping();
   const std::vector<Point<dim> > &unit_support_points =
       (this->fe).get_unit_support_points();
   AssertThrow(!unit_support_points.empty(),
