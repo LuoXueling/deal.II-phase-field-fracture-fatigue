@@ -67,7 +67,7 @@ Extrude { {0,0,1}, {0,0,0}, 2*Pi } { Surface{1}; }
 //   gmsh monopile_gmsh.geo -3 -setnumber REFINE 0 -format inp -o uniform.inp
 DefineConstant[ REFINE = 1 ];
 DefineConstant[ h_cap  = 0.01  ];   // size at the loaded faces (refined only)
-DefineConstant[ h_mid  = 0.65  ];   // size everywhere else / uniform size
+DefineConstant[ h_mid  = 0.50  ];   // size everywhere else / uniform size
 // A band of thickness `plateau` measured in from each loaded face is held at
 // h_cap, so there really is a layer of ~h_cap elements there rather than the
 // size starting to grow the instant it leaves the surface. The ramp to h_mid
@@ -85,28 +85,58 @@ DefineConstant[ reach  = 1.0   ];   // axial extent of the refinement (m)
 DefineConstant[ pw     = 1.0   ];   // ramp shape after the plateau (1.0 = linear)
 DefineConstant[ arc_len = 5.0  ];   // circumferential extent of refinement (m)
 
+// The two loaded ends are treated DIFFERENTLY.
+//
+// MUDLINE (z=-30): the crack-resolution end. Fine (h_cap), confined to the
+//   load-facing arc, graded out over `reach` -- the knobs above.
+//
+// HUB (z=+87): only needs to resolve the applied RNA traction, not a crack.
+//   Refining one side of it is wrong here: the RNA weight and thrust act over
+//   the WHOLE annulus, so the refinement has to be all-round, and it only has
+//   to be modestly finer than h_mid. At h_mid=0.65 the hub ring (12.25 m
+//   circumference) carries just 19 elements around, too few to represent the
+//   traction; h_hub=0.40 gives ~31.
+//   Converged: a sweep of 0.40/0.30/0.20/0.15 moved the tip displacement by
+//   only 0.2%/0.3%/0.02%, and the reaction force not at all (-2.189 MN at every
+//   level), so 0.40 already resolves the traction. Refining further just costs
+//   elements -- the residual error against the hex reference is set by h_mid,
+//   not by the hub.
+DefineConstant[ h_hub     = 0.40 ];  // size at the hub cap (all round)
+DefineConstant[ hub_reach = 1.0  ];  // axial extent of the hub refinement (m)
+
 If (REFINE)
   // Half-angle of the refined arc, taken at the pile radius (the widest part,
   // so a 5 m arc there is >=5 m everywhere the pile is loaded).
   cos_ha = Cos(arc_len / (2.0 * 2.75));
+  // MUDLINE term: fine, arc-limited, distance measured from z=-30 only.
+  //   term 1: h_cap
+  //   term 2: axial ramp, shifted by the plateau so the size stays exactly at
+  //           h_cap for the first `plateau` metres and only then climbs.
+  //   term 3: sector gate -- 0 inside the arc, 1 outside, so outside jumps to
+  //           h_mid. u = -x/r is the cosine of the angle from the -X apex.
   Field[1] = MathEval;
-  // term 1: h_cap
-  // term 2: axial ramp. The distance is shifted by the plateau first --
-  //         Max(0, d - plateau)/(reach - plateau) -- so the size stays exactly
-  //         at h_cap for the first `plateau` metres and only then climbs.
-  // term 3: sector gate -- 0 inside the arc, 1 outside, so outside jumps to h_mid
-  //         u = -x/r is the cosine of the angle measured from the -X apex
-  Field[1].F = Sprintf("Min(%g + %g*( (Max(0, Min(Abs(z+30),Abs(z-87)) - %g)/%g)^%g ) + %g*Max(0, ((%g) - (-x/Sqrt(x*x+y*y+1e-12)))/Sqrt(((%g) - (-x/Sqrt(x*x+y*y+1e-12)))^2 + 1e-12)), %g)",
+  Field[1].F = Sprintf("Min(%g + %g*( (Max(0, Abs(z+30) - %g)/%g)^%g ) + %g*Max(0, ((%g) - (-x/Sqrt(x*x+y*y+1e-12)))/Sqrt(((%g) - (-x/Sqrt(x*x+y*y+1e-12)))^2 + 1e-12)), %g)",
                        h_cap, h_mid - h_cap, plateau, reach - plateau, pw,
                        h_mid - h_cap, cos_ha, cos_ha, h_mid);
+
+  // HUB term: modest, ALL ROUND (no sector gate), distance from z=+87 only.
+  Field[2] = MathEval;
+  Field[2].F = Sprintf("Min(%g + %g*(Abs(z-87)/%g), %g)",
+                       h_hub, h_mid - h_hub, hub_reach, h_mid);
+
+  // The mesh takes the finer of the two requests everywhere.
+  Field[3] = Min;
+  Field[3].FieldsList = {1, 2};
+  BG = 3;
 Else
   // Uniform. Note h_mid is the SAME value the refined mesh coarsens to, so
   // the two meshes agree away from the caps and differ only where the
   // refinement acts -- which is what makes them comparable.
   Field[1] = MathEval;
   Field[1].F = Sprintf("%g", h_mid);
+  BG = 1;
 EndIf
-Background Field = 1;
+Background Field = BG;
 
 // Take the size ONLY from the field above -- otherwise gmsh adds its own
 // curvature/point-based refinement and the grading is no longer what we asked.

@@ -25,7 +25,8 @@ subsection Runtime
   # Solver
   set Use Direct Inner Solver = true
   set Use Direct Inner Solver type = Amesos_Mumps
-  set Newton lower bound = 1.0e-3
+  set Allow skip first Newton iteration = false
+  set Newton lower bound = 1e-4
   set Newton maximum steps = 50
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
@@ -41,7 +42,7 @@ subsection Runtime
   set Use monolithic = false
   set Use multipass staggered = true
   set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-1
+  set Residual tolerance of multipass = 1e-4
   set Quit multipass if residual increasing = true
 
   # "linear" to solve K_phi * phi = r_phi
@@ -60,7 +61,7 @@ end
 subsection Material
     set Young's modulus = 210000000000
     set Poisson's ratio = 0.3
-    set Critical energy release rate = 2700
+    set Critical energy release rate = 27000
     set Phase field length scale = 0.02
     set Density (for self weight) = 7850
     set Plane state = strain
