@@ -66,13 +66,17 @@ Extrude { {0,0,1}, {0,0,0}, 2*Pi } { Surface{1}; }
 // Override from the command line without editing this file:
 //   gmsh monopile_gmsh.geo -3 -setnumber REFINE 0 -format inp -o uniform.inp
 DefineConstant[ REFINE = 1 ];
-DefineConstant[ h_cap  = 0.01  ];   // size at the loaded faces (refined only)
-DefineConstant[ h_mid  = 0.50  ];   // size everywhere else / uniform size
+// h_cap is a TARGET, not a bound: gmsh's Delaunay refinement consistently
+// lands ~1.32x above a uniform requested size (measured 1.27x, 1.314x, 1.319x
+// and 1.323x across four separate configurations). So to obtain an ACTUAL
+// element size of 0.010, ask for 0.010/1.32 = 0.0076.
+DefineConstant[ h_cap  = 0.0076 ];  // request; actual size comes out ~0.010
+DefineConstant[ h_mid  = 0.65  ];   // size everywhere else / uniform size
 // A band of thickness `plateau` measured in from each loaded face is held at
 // h_cap, so there really is a layer of ~h_cap elements there rather than the
 // size starting to grow the instant it leaves the surface. The ramp to h_mid
 // then runs from the end of the plateau out to `reach`.
-DefineConstant[ plateau = 0.02 ];   // thickness held at h_cap (m)
+DefineConstant[ plateau = 0.025 ];  // thickness held at h_cap (m)
 // reach/pw set the AXIAL extent of the refinement, measured from each loaded
 // end face. A short reach (0.05) makes the decay a CLIFF -- everything past
 // 5 cm is already at h_mid, so the mesh reads as refined-then-abrupt rather
@@ -81,8 +85,8 @@ DefineConstant[ plateau = 0.02 ];   // thickness held at h_cap (m)
 //   0.33 at 50 cm, 0.49 at 75 cm, 0.65 at 1 m.
 // The longer reach is affordable because arc_len below confines the fine zone
 // to a narrow sector instead of the whole load-facing half.
-DefineConstant[ reach  = 1.0   ];   // axial extent of the refinement (m)
-DefineConstant[ pw     = 1.0   ];   // ramp shape after the plateau (1.0 = linear)
+DefineConstant[ reach  = 0.3   ];   // axial extent of the refinement (m)
+DefineConstant[ pw     = 0.5   ];   // ramp shape after the plateau (<1 = grows fast)
 DefineConstant[ arc_len = 5.0  ];   // circumferential extent of refinement (m)
 
 // The two loaded ends are treated DIFFERENTLY.
