@@ -253,6 +253,7 @@ namespace Parameters {
         std::string fatigue_accumulation;
         std::string fatigue_accumulation_parameters;
         std::string fatigue_increment;
+        std::string fatigue_increment_parameters;
         std::string fatigue_alpha_t;
 
         static void subsection_declare_parameters(ParameterHandler &prm);
@@ -296,6 +297,15 @@ namespace Parameters {
                 "Fatigue increment", "Auto",
                 Patterns::Selection("Auto|CarraraNoMeanEffect|Kristensen|"
                     "CarraraMeanEffect"));
+            // Parameters for the increment law selected above, when it needs
+            // any. Only CarraraMeanEffect reads it, taking the leading entry as
+            // alpha_n. Empty (the default) falls back to "Fatigue alpha_t" if
+            // set, else the shared Gc/(12*l_phi) default -- so existing
+            // parameter files are unaffected. This exists because the host
+            // acceleration algorithm already owns "Fatigue accumulation
+            // parameters", leaving the increment law no slot of its own.
+            prm.declare_entry("Fatigue increment parameters", "",
+                              Patterns::Anything());
             // Global fatigue threshold. Empty (the default) means every
             // consumer keeps its own hardcoded formulation, so existing
             // parameter files are unaffected. When set, it overrides that
@@ -324,6 +334,8 @@ namespace Parameters {
             fatigue_accumulation_parameters =
                     prm.get("Fatigue accumulation parameters");
             fatigue_increment = prm.get("Fatigue increment");
+            fatigue_increment_parameters =
+                    prm.get("Fatigue increment parameters");
             fatigue_alpha_t = prm.get("Fatigue alpha_t");
         }
         prm.leave_subsection();

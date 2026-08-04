@@ -142,11 +142,44 @@ inline double carrara_mean_effect_increment(
  * alpha_n for CarraraMeanEffect-style increments selected via the "Fatigue
  * increment" parameter. This path cannot read "Fatigue accumulation
  * parameters" -- the host acceleration algorithm already owns that string --
- * so it takes the global "Fatigue alpha_t" when set, else the shared default.
+ * so alpha_n comes from "Fatigue increment parameters" when given, else the
+ * global "Fatigue alpha_t", else the shared default.
+ *
+ * Note the precedence differs from resolve_fatigue_alpha_t's usual ordering:
+ * here the scheme's own string wins over the global, because "Fatigue
+ * increment parameters" exists only to set alpha_n independently of the
+ * degradation threshold. Leaving it empty preserves the previous behaviour.
  */
 template<int dim>
 inline double carrara_default_alpha_n(Controller<dim> &ctl) {
-  return resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl));
+  // increment() calls this per quadrature point per cycle, so the string parse
+  // is resolved exactly once and every later call returns the cached value.
+  // Everything it depends on -- the parameter strings and the material
+  // constants behind the default -- is fixed after construction, so a single
+  // resolution is correct. The static initialiser is thread-safe (C++11): a
+  // concurrent caller blocks until it completes, then reads the same value.
+  static const double alpha_n = [&ctl]() {
+    double value;
+    std::string source;
+    if (ctl.params.fatigue_increment_parameters != "") {
+      std::istringstream iss(ctl.params.fatigue_increment_parameters);
+      AssertThrow(static_cast<bool>(iss >> value),
+                  ExcInternalError(
+                    "Leading entry of 'Fatigue increment parameters' (alpha_n) "
+                    "is not a number: " +
+                    ctl.params.fatigue_increment_parameters));
+      source = "Fatigue increment parameters";
+    } else {
+      value = resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl));
+      source = (ctl.params.fatigue_alpha_t != "") ? "Fatigue alpha_t"
+                                                  : "internal default";
+    }
+    // Printed once per run, from inside the one-time initialiser -- this is
+    // also the marker that the cache resolved exactly once.
+    ctl.dcout << "Using alpha_n: " << value << " from " << source << std::endl;
+    return value;
+  }();
+  return alpha_n;
 }
 
 /**
