@@ -896,6 +896,15 @@ public:
       ctl.dcout << "Terminating as the increase of crack length is too small."
           << std::endl;
       return true;
+    } else if (trial_cycle) {
+      // A trial cycle is speculative: its state is rolled back (see the
+      // trial_cycle branch in after_step, which restores time/timestep from
+      // trial_cycle_start, and return_solution_or_checkpoint, which returns
+      // "checkpoint" here). The base-class crack-length check has no such
+      // guard, so without this an overshooting trial -- exactly the case the
+      // trial exists to detect and reject -- terminates the run before the
+      // controller can shrink n_jump and retry.
+      return false;
     } else {
       return AdaptiveTimeStep<dim>::terminate(ctl);
     }
