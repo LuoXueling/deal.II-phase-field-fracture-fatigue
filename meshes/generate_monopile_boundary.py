@@ -1,7 +1,8 @@
 import math
 
 
-def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
+def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt",
+                           amp_ratio=0.2):
     """
     Generates a boundary condition configuration file for deal.II.
 
@@ -13,6 +14,12 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
         Significant wave height (m).
     output_filename : str
         Name of the output text file.
+    amp_ratio : float
+        Cyclic amplitude as a fraction of the mean load. The loads computed
+        from V_avg_ref and H_s are the MEAN of each cycle; the triangular wave
+        then spans mean*(1 -/+ amp_ratio). amp_ratio=0.2 gives a peak of
+        1.2*mean, a trough of 0.8*mean, and hence a load ratio
+        R = min/max = (1-amp_ratio)/(1+amp_ratio) = 0.667.
     """
 
     # ==========================================
@@ -64,14 +71,14 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
             val = (7.0 * V_rated**2) / (V_hub**3)
             return max(val, 0.005)
 
-    def calc_tower_traction_max(z_top):
+    def calc_tower_traction_mean(z_top):
         """Returns PEAK traction (Pa) for windward tower segment."""
         V_z = get_wind_speed(z_top)
         # Normalized by semi-circumference (pi*D/2)
         traction = (rho_air * C_D_tower / math.pi) * (V_z**2)
         return traction
 
-    def calc_wave_traction_max():
+    def calc_wave_traction_mean():
         """Returns PEAK traction (Pa) for windward pile."""
         u_surf = (math.pi * H_s) / T_wave
         u_dot_surf = (2 * math.pi**2 * H_s) / (T_wave**2)
@@ -84,7 +91,7 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
         t_wave = (2.0 * f_surf) / (math.pi * D_pile)
         return t_wave
 
-    def calc_rna_max():
+    def calc_rna_mean():
         """Returns PEAK Thrust (Pa) and CONSTANT Weight (Pa)."""
         V_hub = get_wind_speed(z_hub)
         C_T = get_thrust_coeff(V_hub)
@@ -111,7 +118,7 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
     lines.append("1 dirichlet 2 0.0")
 
     # --- Surf-2: RNA Loads (Top) ---
-    thrust_max, weight_const = calc_rna_max()
+    thrust_mean_val, weight_const = calc_rna_mean()
 
     # 1. Constant Weight (Neumann)
     # Direction: (0, 0, -1). Magnitude: weight_const.
@@ -119,16 +126,16 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
     lines.append(f"2 neumann 0.0 0.0 {-weight_const:.6e}")
 
     # 2. Cyclic Thrust (Triangular Neumann)
-    # R=0 means Mean = Max/2, Amp = Max/2
+    # The value from V_avg_ref/H_s is the MEAN of the cycle; the amplitude is
+    # a prescribed fraction of it, so the wave spans mean*(1 -/+ amp_ratio).
     # Direction: (1, 0, 0)
-    thrust_mean = thrust_max / 2.0
-    thrust_amp = thrust_max / 2.0
+    thrust_mean = thrust_mean_val
+    thrust_amp = thrust_mean_val * amp_ratio
     lines.append(f"2 triangularneumann 1 0 0 {freq} {thrust_mean:.6e} {thrust_amp:.6e}")
 
     # --- Surf-3: Wave Load (Pile) ---
-    wave_max = calc_wave_traction_max()
-    wave_mean = wave_max / 2.0
-    wave_amp = wave_max / 2.0
+    wave_mean = calc_wave_traction_mean()
+    wave_amp = wave_mean * amp_ratio
     # Direction: (1, 0, 0)
     lines.append(f"3 triangularneumann 1 0 0 {freq} {wave_mean:.6e} {wave_amp:.6e}")
 
@@ -141,9 +148,8 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
         surf_id = 4 + i
         z_top = z_levels[i + 1]  # Use top z for conservative calc
 
-        wind_max = calc_tower_traction_max(z_top)
-        wind_mean = wind_max / 2.0
-        wind_amp = wind_max / 2.0
+        wind_mean = calc_tower_traction_mean(z_top)
+        wind_amp = wind_mean * amp_ratio
 
         lines.append(
             f"{surf_id} triangularneumann 1 0 0 {freq} {wind_mean:.6e} {wind_amp:.6e}"
@@ -163,17 +169,10 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt"):
 # ==========================================
 if __name__ == "__main__":
     # Example: Rated Load Case
-    # V_avg = 8.8 m/s, Hs = 5.0 m
+    # V_avg = 8.8 m/s, Hs = 2.0 m
     generate_dealii_config(
-        V_avg_ref=8.8, H_s=5.0, output_filename="monopile_mid_boundary.txt"
+        V_avg_ref=8.8, H_s=2.0, output_filename="monopile_mid_boundary.txt"
     )
-    generate_dealii_config(
-        V_avg_ref=4.4, H_s=5.0, output_filename="monopile_low_boundary.txt"
-    )
-    generate_dealii_config(
-        V_avg_ref=17.6, H_s=8.0, output_filename="monopile_high_boundary.txt"
-    )
-
     # Uncomment to generate others:
     # generate_dealii_config(V_avg_ref=4.4, H_s=5.0, output_filename="config_low.txt")
     # generate_dealii_config(V_avg_ref=17.6, H_s=8.0, output_filename="config_overload.txt")
