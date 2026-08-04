@@ -845,14 +845,30 @@ class CarraraLogarithmicFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CarraraLogarithmicFatigueDegradation(Controller<dim> &ctl)
     : FatigueDegradation<dim>(ctl) {
+    // kappa has no default, so the parameter string stays mandatory even when
+    // the global "Fatigue alpha_t" is set -- the global only overrides the
+    // leading alpha_t slot, kappa is always read positionally from here.
     AssertThrow(
       ctl.params.fatigue_degradation_parameters != "",
       ExcInternalError("Parameters of CarraraLogarithmicFatigueDegradation "
         "is not assigned."));
+    // Only kappa is taken from this parse; the leading alpha_t slot is read by
+    // resolve_fatigue_alpha_t below, the same way every other scheme does it.
     std::istringstream iss(ctl.params.fatigue_degradation_parameters);
-    iss >> alpha_t >> kappa;
-    ctl.dcout << "Using alpha_t: " << alpha_t << " and kappa: " << kappa
-        << std::endl;
+    double parsed_alpha_t;
+    AssertThrow(static_cast<bool>(iss >> parsed_alpha_t >> kappa),
+                ExcInternalError(
+                  "Parameters of CarraraLogarithmicFatigueDegradation must be "
+                  "'<alpha_t> <kappa>', but got: " +
+                  ctl.params.fatigue_degradation_parameters));
+    alpha_t = resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl),
+                                      ctl.params.fatigue_degradation_parameters);
+    if (ctl.params.fatigue_alpha_t != "")
+      ctl.dcout << "Using alpha_t: " << alpha_t << " from Fatigue alpha_t"
+          << " and kappa: " << kappa << std::endl;
+    else
+      ctl.dcout << "Using alpha_t: " << alpha_t << " and kappa: " << kappa
+          << std::endl;
   };
 
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
@@ -895,11 +911,20 @@ class CojocaruAsymptoticFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CojocaruAsymptoticFatigueDegradation(Controller<dim> &ctl)
     : FatigueDegradation<dim>(ctl) {
-    AssertThrow(ctl.params.fatigue_degradation_parameters != "",
+    // alpha_t is the only parameter here, so the global "Fatigue alpha_t" can
+    // supply it outright; the parameter string is required only without it.
+    AssertThrow(ctl.params.fatigue_degradation_parameters != "" ||
+                  ctl.params.fatigue_alpha_t != "",
                 ExcInternalError(
                   "Parameters of CojocaruCLAAccumulation is not assigned."));
-    std::istringstream iss(ctl.params.fatigue_degradation_parameters);
-    iss >> alpha_t;
+    alpha_t = resolve_fatigue_alpha_t(
+      ctl, 0.0, ctl.params.fatigue_degradation_parameters);
+    if (ctl.params.fatigue_alpha_t != "")
+      ctl.dcout << "Using alpha_t: " << alpha_t << " from Fatigue alpha_t"
+          << std::endl;
+    else
+      ctl.dcout << "Using alpha_t: " << alpha_t << " from configuration"
+          << std::endl;
   };
 
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
