@@ -470,6 +470,18 @@ public:
       ExcInternalError("Parameters of JonasCycleJump is not assigned."));
     std::istringstream iss(ctl.params.adaptive_timestep_parameters);
     iss >> corrected_estimation >> f >> alpha_t >> n_tips >> lambda2 >> lambda3;
+    // alpha_t is a mandatory positional slot here, so unlike the degradation
+    // schemes it always "has a value". The global "Fatigue alpha_t" therefore
+    // overrides the slot when set, keeping the jump's threshold consistent
+    // with the degradation's; leaving it empty preserves the slot exactly.
+    if (ctl.params.fatigue_alpha_t != "") {
+      std::istringstream iss_at(ctl.params.fatigue_alpha_t);
+      double global_alpha_t;
+      AssertThrow(static_cast<bool>(iss_at >> global_alpha_t),
+                  ExcInternalError("'Fatigue alpha_t' is not a number: " +
+                                   ctl.params.fatigue_alpha_t));
+      alpha_t = global_alpha_t;
+    }
     T = 1 / f;
 
     if (ctl.params.phasefield_model == "AT1") {

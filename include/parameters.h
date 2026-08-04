@@ -252,6 +252,8 @@ namespace Parameters {
         std::string fatigue_degradation_parameters;
         std::string fatigue_accumulation;
         std::string fatigue_accumulation_parameters;
+        std::string fatigue_increment;
+        std::string fatigue_alpha_t;
 
         static void subsection_declare_parameters(ParameterHandler &prm);
 
@@ -285,6 +287,23 @@ namespace Parameters {
                     "Yang|Jaccon|JacconNodegrade"));
             prm.declare_entry("Fatigue accumulation parameters", "",
                               Patterns::Anything());
+            // Which per-cycle increment law the resolved-cycle branch of an
+            // acceleration algorithm uses. "Auto" keeps each algorithm's
+            // built-in choice, so existing parameter files are unaffected.
+            // CarraraNoMeanEffect/Kristensen/CarraraMeanEffect accumulations
+            // are fixed to their own law and reject anything else.
+            prm.declare_entry(
+                "Fatigue increment", "Auto",
+                Patterns::Selection("Auto|CarraraNoMeanEffect|Kristensen|"
+                    "CarraraMeanEffect"));
+            // Global fatigue threshold. Empty (the default) means every
+            // consumer keeps its own hardcoded formulation, so existing
+            // parameter files are unaffected. When set, it overrides that
+            // default everywhere alpha_t/alpha_n would otherwise be derived
+            // from Gc/l_phi: the Carrara/Kristensen asymptotic degradations,
+            // the CarraraMeanEffect accumulation's alpha_n, and JonasCycleJump.
+            // A scheme's own parameter string still wins over this if present.
+            prm.declare_entry("Fatigue alpha_t", "", Patterns::Anything());
         }
         prm.leave_subsection();
     }
@@ -304,6 +323,8 @@ namespace Parameters {
             fatigue_accumulation = prm.get("Fatigue accumulation");
             fatigue_accumulation_parameters =
                     prm.get("Fatigue accumulation parameters");
+            fatigue_increment = prm.get("Fatigue increment");
+            fatigue_alpha_t = prm.get("Fatigue alpha_t");
         }
         prm.leave_subsection();
         lame_coefficient_mu = E / (2.0 * (1 + v));

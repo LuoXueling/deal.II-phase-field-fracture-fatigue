@@ -45,21 +45,174 @@ public:
   };
 };
 
+/**
+ * The default fatigue threshold, Gc/(12*l_phi).
+ *
+ * This is the value Carrara Eq. 47 reduces to once the extra 0.5 needed to
+ * reproduce the published results is folded in:
+ *   0.25 * E * eps^2  with  eps^2 = Gc/(3*l_phi*E)   ==>   Gc/(12*l_phi)
+ * It is shared by the Carrara/Kristensen asymptotic degradations (alpha_t) and
+ * by CarraraMeanEffectAccumulation (alpha_n), which historically each spelled
+ * the same formula out separately.
+ */
+template<int dim>
+inline double default_fatigue_alpha_t(Controller<dim> &ctl) {
+  double epsilon_at2 =
+      std::sqrt(ctl.params.Gc / (3 * ctl.params.l_phi * ctl.params.E));
+  return 0.5 * 0.5 * epsilon_at2 * ctl.params.E * epsilon_at2;
+}
+
+/**
+ * Resolves the fatigue threshold for one consumer, in priority order:
+ *   1. the global "Fatigue alpha_t" entry, if set
+ *   2. the scheme's own parameter string, if it supplies a value
+ *   3. `fallback` -- the consumer's historical hardcoded formulation
+ *
+ * The global deliberately outranks the per-scheme strings. Its whole purpose is
+ * to hold every consumer (degradation alpha_t, CarraraMeanEffect alpha_n, and
+ * JonasCycleJump's slot) at one common threshold; if a per-scheme value could
+ * override it, setting it would silently leave those consumers disagreeing,
+ * which is the inconsistency it exists to prevent. Leaving it empty reproduces
+ * the old behaviour exactly, whatever each consumer computed for itself.
+ */
+template<int dim>
+inline double resolve_fatigue_alpha_t(Controller<dim> &ctl, double fallback,
+                                      const std::string &own_parameters = "") {
+  if (ctl.params.fatigue_alpha_t != "") {
+    std::istringstream iss(ctl.params.fatigue_alpha_t);
+    double value;
+    AssertThrow(static_cast<bool>(iss >> value),
+                ExcInternalError("'Fatigue alpha_t' is not a number: " +
+                                 ctl.params.fatigue_alpha_t));
+    return value;
+  }
+  if (own_parameters != "") {
+    // Mirrors the original `iss >> alpha_t`: a non-empty string is taken as
+    // authoritative, and the branch is entered on emptiness alone, not on
+    // whether the parse succeeds. Since C++11 a failed extraction zeroes the
+    // target, so an unparseable value gives 0 -- surfaced here as an error
+    // rather than silently degrading with alpha_t = 0.
+    std::istringstream iss(own_parameters);
+    double value;
+    AssertThrow(static_cast<bool>(iss >> value),
+                ExcInternalError("Leading entry of '" + own_parameters +
+                                 "' is not a number."));
+    return value;
+  }
+  return fallback;
+}
+
+/**
+ * Per-cycle increment laws.
+ *
+ * These are the elementary "how much fatigue history does one resolved cycle
+ * add" rules, factored out so that an acceleration algorithm can be told which
+ * one to use for its resolved-cycle branch via the "Fatigue increment"
+ * parameter. The three differ in how they scale with stress amplitude, which is
+ * what sets the Paris exponent:
+ *   CarraraNoMeanEffect : dpsi*degrade            (~sigma^2 dsigma)
+ *   Kristensen          : dpsi, undegraded        (~sigma^2 dsigma)
+ *   CarraraMeanEffect   : dpsi*psi/alpha_n        (~sigma^4 dsigma)
+ * Only positive increments contribute, matching the original inline code.
+ */
+inline double carrara_no_mean_effect_increment(
+  const std::shared_ptr<PointHistory> &lqph, double degrade) {
+  double dpsi = lqph->get_increment_latest("Positive elastic energy", 0.0) *
+                degrade;
+  return (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+}
+
+inline double kristensen_increment(
+  const std::shared_ptr<PointHistory> &lqph) {
+  // Note: deliberately undegraded -- this is what distinguishes it from
+  // CarraraNoMeanEffect.
+  double dpsi = lqph->get_increment_latest("Positive elastic energy", 0.0);
+  return (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+}
+
+inline double carrara_mean_effect_increment(
+  const std::shared_ptr<PointHistory> &lqph, double degrade, double alpha_n) {
+  double dpsi = lqph->get_increment_latest("Positive elastic energy", 0.0) *
+                degrade;
+  double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
+  return (dpsi > 0 ? 1.0 : 0.0) * dpsi * psi / alpha_n;
+}
+
+/**
+ * alpha_n for CarraraMeanEffect-style increments selected via the "Fatigue
+ * increment" parameter. This path cannot read "Fatigue accumulation
+ * parameters" -- the host acceleration algorithm already owns that string --
+ * so it takes the global "Fatigue alpha_t" when set, else the shared default.
+ */
+template<int dim>
+inline double carrara_default_alpha_n(Controller<dim> &ctl) {
+  return resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl));
+}
+
+/**
+ * Resolves the "Fatigue increment" parameter for an acceleration algorithm.
+ *
+ * `own` is the law the algorithm uses natively; it is returned for "Auto" so
+ * that existing parameter files keep their exact present behaviour.
+ */
+template<int dim>
+inline std::string resolve_fatigue_increment(const std::string &own,
+                                             Controller<dim> &ctl) {
+  const std::string &requested = ctl.params.fatigue_increment;
+  return (requested == "" || requested == "Auto") ? own : requested;
+}
+
+/**
+ * Evaluates the selected increment law. Shared by every acceleration algorithm
+ * so they all interpret "Fatigue increment" identically.
+ */
+template<int dim>
+inline double evaluate_fatigue_increment(
+  const std::string &law, const std::shared_ptr<PointHistory> &lqph,
+  double degrade, Controller<dim> &ctl) {
+  if (law == "Kristensen")
+    return kristensen_increment(lqph);
+  if (law == "CarraraMeanEffect")
+    return carrara_mean_effect_increment(lqph, degrade,
+                                         carrara_default_alpha_n(ctl));
+  if (law == "CarraraNoMeanEffect")
+    return carrara_no_mean_effect_increment(lqph, degrade);
+  AssertThrow(false,
+              ExcInternalError("Unknown 'Fatigue increment' value: " + law));
+  return 0.0;
+}
+
+/**
+ * Guards the accumulations that are definitionally tied to one increment law.
+ * CarraraNoMeanEffect/Kristensen/CarraraMeanEffect each accept only their own,
+ * so a mismatched "Fatigue increment" is a hard error rather than a silently
+ * ignored setting.
+ */
+template<int dim>
+inline void assert_fixed_fatigue_increment(const std::string &own,
+                                           Controller<dim> &ctl) {
+  const std::string &requested = ctl.params.fatigue_increment;
+  AssertThrow(requested == "" || requested == "Auto" || requested == own,
+              ExcInternalError(
+                own + "Accumulation only accepts the " + own +
+                " increment, but 'Fatigue increment' is set to '" + requested +
+                "'. Use an acceleration-algorithm accumulation (Cojocaru, Li, "
+                "Jonas, Yang, Jaccon, ...) to select a different increment."));
+}
+
 template<int dim>
 class CarraraNoMeanEffectAccumulation : public FatigueAccumulation<dim> {
 public:
   CarraraNoMeanEffectAccumulation(Controller<dim> &ctl)
     : FatigueAccumulation<dim>(ctl) {
+    assert_fixed_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
-    double dpsi =
-        lqph->get_increment_latest("Positive elastic energy") * degrade;
-    double increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
-    return increm;
+    return carrara_no_mean_effect_increment(lqph, degrade);
   };
 };
 
@@ -68,15 +221,14 @@ class KristensenAccumulation : public FatigueAccumulation<dim> {
 public:
   KristensenAccumulation(Controller<dim> &ctl)
     : FatigueAccumulation<dim>(ctl) {
+    assert_fixed_fatigue_increment("Kristensen", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
-    double dpsi = lqph->get_increment_latest("Positive elastic energy", 0.0);
-    double increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
-    return increm;
+    return kristensen_increment(lqph);
   };
 };
 
@@ -98,6 +250,7 @@ public:
       R >= 0 || (R < 0 && ctl.params.degradation == "hybridnotension"),
       ExcInternalError("Cannot use KristensenCLAAccumulation when "
         "R<0 while hybridnotension split is not used"));
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -105,10 +258,7 @@ public:
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
     if (ctl.current_timestep != ctl.params.timestep_size_2) {
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy", 0.0) * degrade;
-      double increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
-      return increm;
+      return evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else {
       double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
       double n_jump = ctl.get_info("N jump", 1);
@@ -117,6 +267,7 @@ public:
     }
   };
   double R;
+  std::string increment_law;
 };
 
 template<int dim>
@@ -128,6 +279,7 @@ public:
                   "Parameters of CojocaruCLAAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
     iss >> R >> q_jump;
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -138,9 +290,7 @@ public:
     double increm;
     if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy", 0.0) * degrade;
-      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      increm = evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else {
       double s12 = lqph->get_initial("s12", 0.0);
       double s23 = lqph->get_initial("s23", 0.0);
@@ -178,6 +328,7 @@ public:
   }
 
   double R, q_jump;
+  std::string increment_law;
 };
 
 template<int dim>
@@ -196,10 +347,8 @@ public:
     if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
       if (ctl.current_timestep != ctl.params.timestep_size_2) {
-        double dpsi =
-            lqph->get_increment_latest("Positive elastic energy", 0.0) *
-            degrade;
-        increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+        increm = evaluate_fatigue_increment(this->increment_law, lqph, degrade,
+                                            ctl);
       } else {
         double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
         increm = psi * (1 - this->R * this->R * (this->R >= 0 ? 1 : 0));
@@ -222,6 +371,7 @@ public:
                   "Parameters of LiAccumulation is not assigned."));
     std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
     iss >> R >> chi_cr;
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -232,9 +382,7 @@ public:
     double increm;
     if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy", 0.0) * degrade;
-      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      increm = evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else {
       double y3 = lqph->get_initial("y3", 0.0);
       double y2 = lqph->get_initial("y2", 0.0);
@@ -294,6 +442,7 @@ public:
   }
 
   double R, chi_cr;
+  std::string increment_law;
 };
 
 template<int dim>
@@ -312,10 +461,8 @@ public:
     if (n_jumps == 0 || ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
       if (ctl.current_timestep != ctl.params.timestep_size_2) {
-        double dpsi =
-            lqph->get_increment_latest("Positive elastic energy", 0.0) *
-            degrade;
-        increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+        increm = evaluate_fatigue_increment(this->increment_law, lqph, degrade,
+                                            ctl);
       } else {
         double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
         increm = psi * (1 - this->R * this->R * (this->R >= 0 ? 1 : 0));
@@ -343,6 +490,7 @@ template<int dim>
 class JonasAccumulation : public FatigueAccumulation<dim> {
 public:
   JonasAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -356,9 +504,7 @@ public:
     if ((n_jumps == 0 && std::abs(trial_cycle) < 1e-8) ||
         ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy") * degrade;
-      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      increm = evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else if (n_jumps > 0) {
       double y1 = lqph->get_initial("y1", 0.0);
       double y2 = lqph->get_initial("y2", 0.0);
@@ -382,6 +528,8 @@ public:
         lqph->get_latest("Fatigue history", 0.0));
     }
   }
+
+  std::string increment_law;
 };
 
 template<int dim>
@@ -407,10 +555,8 @@ public:
         ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
       if (ctl.current_timestep != ctl.params.timestep_size_2) {
-        double dpsi =
-            lqph->get_increment_latest("Positive elastic energy", 0.0) *
-            degrade;
-        increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+        increm = evaluate_fatigue_increment(this->increment_law, lqph, degrade,
+                                            ctl);
       } else {
         double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
         increm = psi * (1 - R * R * (R >= 0 ? 1 : 0));
@@ -449,6 +595,7 @@ template<int dim>
 class YangAccumulation : public FatigueAccumulation<dim> {
 public:
   YangAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -462,9 +609,7 @@ public:
     if (std::abs(subcycle - 0) > 1e-8 || std::abs(n_jumps) < 1e-8 ||
         ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy") * degrade;
-      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      increm = evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else {
       double last_jump = ctl.get_info("Last jump", 0.0);
       double new_increment = lqph->get_initial("Fast increment", 0.0);
@@ -492,12 +637,15 @@ public:
       }
     }
   }
+
+  std::string increment_law;
 };
 
 template<int dim>
 class JacconAccumulation : public FatigueAccumulation<dim> {
 public:
   JacconAccumulation(Controller<dim> &ctl) : FatigueAccumulation<dim>(ctl) {
+    increment_law = resolve_fatigue_increment("CarraraNoMeanEffect", ctl);
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
@@ -511,9 +659,7 @@ public:
     if (std::abs(subcycle - 0) > 1e-8 ||
         ctl.current_timestep != ctl.params.timestep_size_2) {
       // Regular accumulation
-      double dpsi =
-          lqph->get_increment_latest("Positive elastic energy") * degrade;
-      increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi;
+      increm = evaluate_fatigue_increment(increment_law, lqph, degrade, ctl);
     } else {
       double n_trials = ctl.get_info("N trials", 0);
       if (std::abs(n_trials) < 1e-8) {
@@ -558,6 +704,8 @@ public:
       lqph->update_independent("Residual", residual);
     }
   }
+
+  std::string increment_law;
 };
 
 template<int dim>
@@ -581,30 +729,26 @@ class CarraraMeanEffectAccumulation : public FatigueAccumulation<dim> {
 public:
   CarraraMeanEffectAccumulation(Controller<dim> &ctl)
     : FatigueAccumulation<dim>(ctl) {
+    assert_fixed_fatigue_increment("CarraraMeanEffect", ctl);
     // Eq. 47 does not match any of alpha_t claimed in the result section
     // We have to multiply another 0.5 to reproduce the results.
-    double epsilon_at2 =
-        std::sqrt(ctl.params.Gc / (3 * ctl.params.l_phi * ctl.params.E));
-    if (ctl.params.fatigue_accumulation_parameters == "") {
-      alpha_n = 0.5 * 0.5 * epsilon_at2 * ctl.params.E * epsilon_at2;
-      ctl.dcout << "Using alpha_n: " << alpha_n << std::endl;
-    } else {
-      std::istringstream iss(ctl.params.fatigue_accumulation_parameters);
-      iss >> alpha_n;
+    alpha_n = resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl),
+                                      ctl.params.fatigue_accumulation_parameters);
+    if (ctl.params.fatigue_alpha_t != "")
+      ctl.dcout << "Using alpha_n: " << alpha_n << " from Fatigue alpha_t"
+          << std::endl;
+    else if (ctl.params.fatigue_accumulation_parameters != "")
       ctl.dcout << "Using alpha_n: " << alpha_n << "from configuration"
           << std::endl;
-    }
+    else
+      ctl.dcout << "Using alpha_n: " << alpha_n << std::endl;
   };
 
   double increment(const std::shared_ptr<PointHistory> &lqph, double phasefield,
                    double degrade, double degrade_derivative,
                    double degrade_second_derivative,
                    Controller<dim> &ctl) override {
-    double dpsi =
-        lqph->get_increment_latest("Positive elastic energy", 0.0) * degrade;
-    double psi = lqph->get_latest("Positive elastic energy", 0.0) * degrade;
-    double increm = (dpsi > 0 ? 1.0 : 0.0) * dpsi * psi / alpha_n;
-    return increm;
+    return carrara_mean_effect_increment(lqph, degrade, alpha_n);
   };
 
 private:
@@ -665,19 +809,18 @@ class CarraraAsymptoticFatigueDegradation : public FatigueDegradation<dim> {
 public:
   CarraraAsymptoticFatigueDegradation(Controller<dim> &ctl)
     : FatigueDegradation<dim>(ctl) {
-    if (ctl.params.fatigue_degradation_parameters == "") {
-      // Eq. 47 does not match any of alpha_t claimed in the result section
-      // We have to multiply another 0.5 to reproduce the results.
-      double epsilon_at2 =
-          std::sqrt(ctl.params.Gc / (3 * ctl.params.l_phi * ctl.params.E));
-      alpha_t = 0.5 * 0.5 * epsilon_at2 * ctl.params.E * epsilon_at2;
-      ctl.dcout << "Using alpha_t: " << alpha_t << std::endl;
-    } else {
-      std::istringstream iss(ctl.params.fatigue_degradation_parameters);
-      iss >> alpha_t;
+    // Eq. 47 does not match any of alpha_t claimed in the result section
+    // We have to multiply another 0.5 to reproduce the results.
+    alpha_t = resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl),
+                                      ctl.params.fatigue_degradation_parameters);
+    if (ctl.params.fatigue_alpha_t != "")
+      ctl.dcout << "Using alpha_t: " << alpha_t << " from Fatigue alpha_t"
+          << std::endl;
+    else if (ctl.params.fatigue_degradation_parameters != "")
       ctl.dcout << "Using alpha_t: " << alpha_t << " from configuration"
           << std::endl;
-    }
+    else
+      ctl.dcout << "Using alpha_t: " << alpha_t << std::endl;
   };
 
   double degradation_value(const std::shared_ptr<PointHistory> &lqph,
@@ -736,7 +879,14 @@ class KristensenAsymptoticFatigueDegradation
 public:
   KristensenAsymptoticFatigueDegradation(Controller<dim> &ctl)
     : CarraraAsymptoticFatigueDegradation<dim>(ctl) {
-    this->alpha_t = ctl.params.Gc / (12 * ctl.params.l_phi);
+    // Deliberately ignores "Fatigue degradation parameters" -- this scheme
+    // defines alpha_t from Gc and l_phi. The global "Fatigue alpha_t" does
+    // override it, so the threshold can be set independently of Gc.
+    this->alpha_t = resolve_fatigue_alpha_t(
+      ctl, ctl.params.Gc / (12 * ctl.params.l_phi));
+    if (ctl.params.fatigue_alpha_t != "")
+      ctl.dcout << "Using alpha_t: " << this->alpha_t << " from Fatigue alpha_t"
+          << std::endl;
   };
 };
 
