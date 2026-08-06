@@ -360,13 +360,65 @@ public:
           GlobalEstimator::min<dim>("n_jump_local", 1, ctl);
 
       n_jump = std::max(static_cast<unsigned int>(std::floor(n_jump_temp)), static_cast<unsigned int>(1));
-      if (GlobalEstimator::max<dim>("Phase field", 0.0, ctl) < 0.1) {
-        n_jump = static_cast<unsigned int>(
-          std::ceil(static_cast<double>(max_jumps) / 10.0));
-      }
+        // n_jump above is what the quadrature points propose. It is only
+        // meaningful once some point is in fatigue-driven growth: below alpha_t
+        // the degradation is identically 1, so phi cannot respond and every point
+        // abstains. Until then, ramp geometrically toward alpha_t.
+        static const double alpha_thr = resolve_fatigue_alpha_t(
+            ctl, default_fatigue_alpha_t(ctl),
+            ctl.params.fatigue_degradation_parameters);
+        const bool usable_now =
+            GlobalEstimator::max<dim>("usable_pt", 0.0, ctl) > 0.5;
+        const bool phi_ready =
+            GlobalEstimator::max<dim>("phi_ready", 0.0, ctl) > 0.5;
+
+        if (usable_now) {
+          // A point is usable: take its proposal unchanged. No clamp against the
+          // ramp -- once the points can size the jump they own it completely.
+          if (!criterion_active) {
+            criterion_active = true;
+            ctl.dcout << "Cycle jump criterion is active (a point satisfies "
+                << "alpha > alpha_t, 0.1 < phi < 0.9, increasing phi)."
+                << std::endl;
+          }
+        } else if (criterion_active) {
+          // Points were usable and no longer are (near failure phi passes 0.9 at
+          // the tip). Do not resume ramping or fall back to max_jumps -- CT10 took
+          // max_jumps twice that way, 31% of its life in two steps.
+          n_jump = std::min(n_jump, std::max(1u, 2 * last_jump));
+        } else if (ramp_jump > 0) {
+          // Ramp only until a point crosses the phi floor with alpha past the
+          // threshold. Growing the jump further is self-defeating: a larger jump
+          // inflates the first post-jump interval, which is what the points
+          // measure, so hold the size and let them become usable.
+          if (phi_ready && !ramp_held) {
+            ramp_held = true;
+            ctl.dcout << "phi floor reached; holding the cycle jump at "
+                << ramp_jump << " cycles until the criterion becomes usable."
+                << std::endl;
+          }
+          if (!phi_ready)
+            ramp_jump = std::max(ramp_jump + 1,
+                                 std::min(max_jumps,
+                                          static_cast<unsigned int>(1.5 * ramp_jump)));
+          n_jump = ramp_jump;
+        } else {
+          // First jump: size it to bring the fastest point up to alpha_t.
+          const double a_max = GlobalEstimator::max<dim>("Fatigue history", 0.0, ctl);
+          const double a_rate = GlobalEstimator::max<dim>("alpha_rate", 0.0, ctl);
+          n_jump = (a_rate > 0.0)
+                       ? std::max(1u, std::min(max_jumps,
+                                               static_cast<unsigned int>(std::ceil(
+                                                   (alpha_thr - a_max) / a_rate))))
+                       : max_jumps;
+          ramp_jump = n_jump;
+        }
+
+      last_jump = n_jump;
       ctl.set_info("N jump", n_jump);
       ctl.dcout << "Doing cycle jumping in this timestep: jumping " << n_jump
-          << " cycles" << std::endl;
+          << " cycles (" << (criterion_active ? "criterion" : "ramping to alpha_t")
+            << ")" << std::endl;
       timestep = T * n_jump;
     } else {
       timestep = ctl.current_timestep;
@@ -406,6 +458,11 @@ public:
   double subcycle;
   unsigned int max_jumps;
   unsigned int n_jump;
+  // Cycle-jump state: the ramped jump size used while no point is usable,
+  // the previous jump (bounds the fallback if usability is lost), whether
+  // the ramp has been frozen, and whether the criterion has taken over.
+  unsigned int ramp_jump = 0, last_jump = 0;
+  bool criterion_active = false, ramp_held = false;
   unsigned int expected_cycles;
 };
 

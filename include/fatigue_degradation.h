@@ -466,19 +466,50 @@ public:
       double phi2 = std::max(lqph->get_initial("phi2", 0.0), 1e-10);
       double phi1 = std::max(lqph->get_initial("phi1", 0.0), 1e-10);
       double phi0 = std::max(lqph->get_latest("Phase field", 0.0), 1e-10);
-      if (phi0 < 1e-1 && (phi0 <= phi1 * (1 + 1e-6) || phi1 <= phi2 * (1 + 1e-6))) {
-        // The point is subject to minor numerical error, or they are not updated.
+      // phi is irreversible and LiCycleJump takes the MIN of n_jump_local over
+      // every quadrature point, so a point whose history says nothing useful
+      // must abstain (propose max_jump) rather than drag the timestep down.
+      const double alpha_now = lqph->get_latest("Fatigue history", 0.0);
+      static const double alpha_thr =
+          resolve_fatigue_alpha_t(ctl, default_fatigue_alpha_t(ctl),
+                                  ctl.params.fatigue_degradation_parameters);
+      // One cycle of alpha (y0 just written this subcycle, y1 committed last
+      // cycle). LiCycleJump reads the global max to size the first jump so
+      // the fastest-accumulating point lands on alpha_t.
+      lqph->update("alpha_rate",
+                   lqph->get_latest("y0", 0.0) - lqph->get_initial("y1", 0.0));
+      // pt_usable is the single source of truth: it gates the local computation
+      // below and is reduced globally by LiCycleJump, so the two cannot drift.
+      //   alpha > alpha_t   below it CarraraAsymptotic returns degrade == 1
+      //                     exactly, so phi cannot respond to the history.
+      //   0.1 < phi < 0.9   below, phi is elastic-driven and its per-cycle
+      //                     change sits at the solver noise floor; above, the
+      //                     point is saturating.
+      //   phi increasing    irreversibility; a decrease is numerical.
+      // Convexity is NOT required: a concave history still gives a valid
+      // first-order estimate (the d2 term is dropped below). Demanding
+      // d2 > 0 rejected every point at the CT10 crack tip, where phi is
+      // concave while damage is genuinely accumulating.
+      const bool pt_usable =
+          alpha_now > alpha_thr && phi0 > 0.1 && phi0 < 0.9 &&
+          phi0 - phi1 > 0 && phi1 - phi2 > 0;
+      lqph->update("usable_pt", pt_usable ? 1.0 : 0.0);
+      // Separately flag a point that has crossed the phi floor with alpha past
+      // the threshold. LiCycleJump freezes the ramp on this: growing the jump
+      // further only inflates the interval the points measure.
+      lqph->update("phi_ready",
+                   (alpha_now > alpha_thr && phi0 > 0.1) ? 1.0 : 0.0);
+      if (!pt_usable) {
         lqph->update("n_jump_local", max_jump);
       } else {
         double n_jump_local = 1;
-        if (phi0 - 2 * phi1 + phi2 < 0) {
-          lqph->update("n_jump_local", max_jump);
-        } else {
-          // f(n) = (n+1) d1 + (n+1)^2 d2/2 is strictly increasing (d1 > 0 and
-          // d2 >= 0 are guaranteed above), so the original O(n) scan for the
-          // smallest n >= 1 with f(n) > rhs reduces to bisection.
+          // f(n) = (n+1) d1 + (n+1)^2 d2/2 with d1 > 0 and d2 clamped to >= 0 is
+          // strictly increasing, so the original O(n) scan for the smallest
+          // n >= 1 with f(n) > rhs reduces to bisection.
           const double d1 = phi0 - phi1;
-          const double d2 = phi0 - 2 * phi1 + phi2;
+          // Drop the second-order term for a concave history: f(n) = (n+1) d1 is
+          // then linear and increasing, so the bisection below still applies.
+          const double d2 = std::max(0.0, phi0 - 2 * phi1 + phi2);
           const double rhs = d1 / (d1 + d2) * chi_cr * phi0;
           auto f = [d1, d2](double n) {
             return (n + 1) * d1 + (n + 1) * (n + 1) * 0.5 * d2;
@@ -501,13 +532,16 @@ public:
               // Invariant: f(lo) <= rhs < f(hi); converge on the smallest such n.
               while (hi - lo > 1.0) {
                 double mid = std::floor((lo + hi) / 2.0);
-                if (f(mid) <= rhs) lo = mid; else hi = mid;
+                if (f(mid) <= rhs) {
+                  lo = mid;
+                } else {
+                  hi = mid;
+                }
               }
               n_jump_local = std::min(hi, max_jump);
             }
           }
           lqph->update("n_jump_local", n_jump_local);
-        }
       }
     }
   }
