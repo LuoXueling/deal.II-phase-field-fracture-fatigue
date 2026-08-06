@@ -7,6 +7,7 @@
 
 #include "controller.h"
 #include "dealii_includes.h"
+#include <complex>
 using namespace dealii;
 
 template<int dim>
@@ -421,15 +422,27 @@ public:
       double y2 = lqph->get_initial("y2", 0.0);
       double y1 = lqph->get_initial("y1", 0.0);
       double y0 = lqph->get_initial("y0", 0.0);
-      double y_current = y0;
-      for (int i = 0; i < n_jumps; i++) {
-        double dy = (y0 - y1) + 0.5 * (y0 - 2 * y1 + y2) + 0.25 * (y0 - 3 * y1 + 3 * y2 - y3);
-        y3 = y2;
-        y2 = y1;
-        y1 = y0;
-        y0 = y0 + dy;
+      // Closed form of y_{k+1} = 11/4 y_k - 11/4 y_{k-1} + 5/4 y_{k-2} - 1/4
+      // y_{k-3}, replacing an O(n_jumps) loop per quadrature point. Its roots
+      // are a defective 1 (giving A + B n) and a pair of modulus 1/2 (the
+      // transient), so y_n = A + B n + 2 Re(C lambda^n). Do not evaluate this by
+      // matrix powers: the defective unit root amplifies its splitting error
+      // linearly in n (~3% at n = 1e5).
+      const double A_sec = y0 + 0.25 * y1 - 0.5 * y2 + 0.25 * y3;
+      (void)A_sec; // cancels in y_n - y_0.
+      const double B_sec = 2.0 * y0 - 3.5 * y1 + 2.0 * y2 - 0.5 * y3;
+      increm = B_sec * static_cast<double>(n_jumps);
+      // The transient decays as 2^-n; past ~60 jumps dropping it costs <1e-4
+      // relative, so only small jumps pay for the complex arithmetic.
+      if (n_jumps < 60) {
+        const std::complex<double> lambda(0.375, 0.330718913883073824);
+        const std::complex<double> C =
+            std::complex<double>(0.0, 0.377964473009227227) * y0 +
+            std::complex<double>(-0.125, -0.897665623396914665) * y1 +
+            std::complex<double>(0.25, 0.661437827766147648) * y2 +
+            std::complex<double>(-0.125, -0.14173667737846021) * y3;
+        increm += 2.0 * (C * std::pow(lambda, n_jumps)).real() - 2.0 * C.real();
       }
-      increm = y0 - y_current;
     }
     return increm;
   };
@@ -461,11 +474,36 @@ public:
         if (phi0 - 2 * phi1 + phi2 < 0) {
           lqph->update("n_jump_local", max_jump);
         } else {
-          while ((n_jump_local + 1) * (phi0 - phi1) + std::pow(n_jump_local + 1, 2) * 0.5 * (phi0 - 2 * phi1 + phi2) <= (
-                  phi0 - phi1) / (phi0 - phi1 + phi0 - 2 * phi1 + phi2) * chi_cr * phi0) {
-            n_jump_local++;
-            if (n_jump_local >= max_jump) {
-              break;
+          // f(n) = (n+1) d1 + (n+1)^2 d2/2 is strictly increasing (d1 > 0 and
+          // d2 >= 0 are guaranteed above), so the original O(n) scan for the
+          // smallest n >= 1 with f(n) > rhs reduces to bisection.
+          const double d1 = phi0 - phi1;
+          const double d2 = phi0 - 2 * phi1 + phi2;
+          const double rhs = d1 / (d1 + d2) * chi_cr * phi0;
+          auto f = [d1, d2](double n) {
+            return (n + 1) * d1 + (n + 1) * (n + 1) * 0.5 * d2;
+          };
+          if (f(1.0) > rhs) {
+            n_jump_local = 1.0;
+          } else {
+            double lo = 1.0, hi = 2.0;
+            bool capped = false;
+            while (f(hi) <= rhs) {
+              lo = hi;
+              hi *= 2.0;
+              if (hi >= max_jump) {
+                n_jump_local = max_jump;
+                capped = true;
+                break;
+              }
+            }
+            if (!capped) {
+              // Invariant: f(lo) <= rhs < f(hi); converge on the smallest such n.
+              while (hi - lo > 1.0) {
+                double mid = std::floor((lo + hi) / 2.0);
+                if (f(mid) <= rhs) lo = mid; else hi = mid;
+              }
+              n_jump_local = std::min(hi, max_jump);
             }
           }
           lqph->update("n_jump_local", n_jump_local);
@@ -505,15 +543,27 @@ public:
       double y2 = lqph->get_initial("y2", 0.0);
       double y1 = lqph->get_initial("y1", 0.0);
       double y0 = lqph->get_initial("y0", 0.0);
-      double y_current = y0;
-      for (int i = 0; i < n_jumps; i++) {
-        double dy = (y0 - y1) + 0.5 * (y0 - 2 * y1 + y2) + 0.25 * (y0 - 3 * y1 + 3 * y2 - y3);
-        y3 = y2;
-        y2 = y1;
-        y1 = y0;
-        y0 = y0 + dy;
+      // Closed form of y_{k+1} = 11/4 y_k - 11/4 y_{k-1} + 5/4 y_{k-2} - 1/4
+      // y_{k-3}, replacing an O(n_jumps) loop per quadrature point. Its roots
+      // are a defective 1 (giving A + B n) and a pair of modulus 1/2 (the
+      // transient), so y_n = A + B n + 2 Re(C lambda^n). Do not evaluate this by
+      // matrix powers: the defective unit root amplifies its splitting error
+      // linearly in n (~3% at n = 1e5).
+      const double A_sec = y0 + 0.25 * y1 - 0.5 * y2 + 0.25 * y3;
+      (void)A_sec; // cancels in y_n - y_0.
+      const double B_sec = 2.0 * y0 - 3.5 * y1 + 2.0 * y2 - 0.5 * y3;
+      increm = B_sec * static_cast<double>(n_jumps);
+      // The transient decays as 2^-n; past ~60 jumps dropping it costs <1e-4
+      // relative, so only small jumps pay for the complex arithmetic.
+      if (n_jumps < 60) {
+        const std::complex<double> lambda(0.375, 0.330718913883073824);
+        const std::complex<double> C =
+            std::complex<double>(0.0, 0.377964473009227227) * y0 +
+            std::complex<double>(-0.125, -0.897665623396914665) * y1 +
+            std::complex<double>(0.25, 0.661437827766147648) * y2 +
+            std::complex<double>(-0.125, -0.14173667737846021) * y3;
+        increm += 2.0 * (C * std::pow(lambda, n_jumps)).real() - 2.0 * C.real();
       }
-      increm = y0 - y_current;
     }
     return increm;
   };
