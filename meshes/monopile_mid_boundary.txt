@@ -1,6 +1,8 @@
 1 dirichlet 0 0.0
 1 dirichlet 1 0.0
 1 dirichlet 2 0.0
+13 dirichlet 1 0.0
+14 dirichlet 1 0.0
 2 neumann 0.0 0.0 -4.743563e+06
 2 triangularneumann 1 0 0 1.0 8.413709e+05 1.682742e+05
 3 triangularneumann 1 0 0 1.0 2.315760e+03 4.631519e+02

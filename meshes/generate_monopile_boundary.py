@@ -2,7 +2,8 @@ import math
 
 
 def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt",
-                           amp_ratio=0.2):
+                           amp_ratio=0.2, half_model=True,
+                           half_symmetry_ids=(13, 14)):
     """
     Generates a boundary condition configuration file for deal.II.
 
@@ -20,6 +21,17 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt",
         then spans mean*(1 -/+ amp_ratio). amp_ratio=0.2 gives a peak of
         1.2*mean, a trough of 0.8*mean, and hence a load ratio
         R = min/max = (1-amp_ratio)/(1+amp_ratio) = 0.667.
+    half_model : bool
+        True when the mesh is the y>0 half produced by revolving the profile
+        through Pi (the current monopile_gmsh.geo). Adds a u_y=0 roller on the
+        exposed y=0 faces. Set False only for a full 2*Pi mesh, where those
+        faces do not exist and the extra ids would silently match nothing.
+    half_symmetry_ids : tuple of int
+        Boundary ids of the two exposed y=0 faces. These come from the Abaqus
+        round-trip (*Surface, name=Surf-N -> id N), NOT from the .geo, which
+        defines no Physical entities. Update these to whatever the export
+        actually assigns -- an id that does not exist in the mesh applies no
+        constraint and the model will drift out of plane.
     """
 
     # ==========================================
@@ -116,6 +128,28 @@ def generate_dealii_config(V_avg_ref, H_s, output_filename="bc_config.txt",
     lines.append("1 dirichlet 0 0.0")
     lines.append("1 dirichlet 1 0.0")
     lines.append("1 dirichlet 2 0.0")
+
+    # --- Surf-13/14: y=0 symmetry plane of the HALF model (roller) ---
+    # monopile_gmsh.geo revolves the profile by Pi, not 2*Pi, so only the
+    # y>0 half is meshed and the y=0 plane is left as two flat exposed faces
+    # (sweep start on the +X side, sweep end on the -X side).
+    #
+    # These get a SYMMETRY condition: u_y = 0, u_x and u_z FREE. One line per
+    # face, component 1 only. AbstractField::setup_dirichlet_boundary_condition
+    # passes fields.component_masks[..._1] to interpolate_boundary_values, so
+    # exactly one component is constrained.
+    #
+    # Emitting all three components here would be an ENCASTRE, not a roller:
+    # it would clamp the crack faces shut and suppress the very opening the
+    # phase field is meant to resolve.
+    #
+    # No load rescaling is needed anywhere else in this file. The tractions
+    # below are per-unit-AREA, and the half model's surfaces have half the
+    # area, so each resultant force halves automatically -- which is correct
+    # for a structure carrying half the domain.
+    if half_model:
+        for surf_id in half_symmetry_ids:
+            lines.append(f"{surf_id} dirichlet 1 0.0")
 
     # --- Surf-2: RNA Loads (Top) ---
     thrust_mean_val, weight_const = calc_rna_mean()

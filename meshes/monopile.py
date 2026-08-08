@@ -42,6 +42,13 @@ my_model = mdb.ModelFromInputFile(name=model_name, inputFileName=INP_IN)
 # -------------------------------------------------------------------
 # 2. PARAMETERS
 # -------------------------------------------------------------------
+# True when the imported mesh is the y>0 half (monopile_gmsh.geo revolving the
+# profile through Pi rather than 2*Pi). Controls three things: picking the two
+# exposed y=0 faces as Surf-13/Surf-14, halving every analytic surface area in
+# the coverage check, and skipping the leeward-half assumptions that only hold
+# for a full revolve. Detected from the mesh below rather than trusted blindly.
+HALF_MODEL = True
+
 d_water    = 30.0
 D_pile     = 5.5
 t_pile     = 0.060
@@ -162,6 +169,21 @@ for el in p.elements:
 exterior = [(k, face_owner[k]) for k, c in face_count.items() if c == 1]
 print("exterior faces: %d" % len(exterior))
 
+# Verify HALF_MODEL against the mesh instead of trusting the flag. A full
+# revolve has nodes on both sides of y=0; the half model has none below it.
+# Getting this wrong is silent and expensive -- a full mesh with HALF_MODEL=True
+# halves every expected area and passes nothing, while a half mesh with
+# HALF_MODEL=False leaves the symmetry plane untagged and unrestrained.
+_y_min = min(c[1] for c in coord.values())
+_mesh_is_half = _y_min > -1.0e-6
+if _mesh_is_half != HALF_MODEL:
+    raise ValueError(
+        "HALF_MODEL=%s but the mesh %s nodes at y<0 (y_min=%.6g). Set "
+        "HALF_MODEL to %s, or re-export the mesh from a .geo revolving through "
+        "%s." % (HALF_MODEL, "has no" if _mesh_is_half else "HAS",
+                 _y_min, _mesh_is_half, "Pi" if HALF_MODEL else "2*Pi"))
+print("half model: %s (y_min=%.6g)" % (HALF_MODEL, _y_min))
+
 def face_centroid(key):
     pts = [coord[l] for l in key]
     return (sum([q[0] for q in pts]) / 3.0,
@@ -204,9 +226,31 @@ def face_is_flat_at(key, z_plane):
             return False
     return True
 
+def face_is_flat_at_y0(key):
+    """True only if EVERY node of the face lies on the y=0 symmetry plane.
+
+    Same all-nodes test as face_is_flat_at, and for the same reason: a
+    centroid test would swallow wall faces that merely pass near the plane
+    once the mesh is refined there. The refined sector is centred on the -X
+    apex, which lies IN this plane, so those near-misses are exactly the
+    elements that would be caught.
+    """
+    for l in key:
+        if abs(coord[l][1]) > 1.0e-6:
+            return False
+    return True
+
 # Bucket every exterior face into the surface it belongs to, using the same
 # geometric criteria the original findAt pick points encoded: the loaded
 # surfaces are on the OUTER wall, on the -X (load-facing) half, in their z band.
+#
+# HALF MODEL: monopile_gmsh.geo now revolves the profile through Pi, so the
+# y=0 plane is exposed as two flat faces -- the sweep start (+X side) and the
+# sweep end (-X side). They are tagged Surf-13 and Surf-14 and carry the
+# roller (u_y = 0) written by generate_monopile_boundary.py. They must be
+# picked BEFORE the outer-wall test, because they ARE on the outer radius at
+# their outer edge and would otherwise leak into Surf-3 / Surf-4..12 and be
+# loaded as if they were windward wall.
 buckets = {}
 for key, owner in exterior:
     cx, cy, cz = face_centroid(key)
@@ -215,6 +259,12 @@ for key, owner in exterior:
         continue
     if face_is_flat_at(key, z_hub):
         buckets.setdefault('Surf-2', []).append(owner)      # hub annulus
+        continue
+    if HALF_MODEL and face_is_flat_at_y0(key):
+        # -X side is the crack-relevant one; keep them separate so either can
+        # be released independently if a half-symmetry assumption is revisited.
+        nm = 'Surf-14' if cx < 0.0 else 'Surf-13'
+        buckets.setdefault(nm, []).append(owner)            # y=0 roller faces
         continue
     if not on_outer_wall(key) or cx >= 0.0:
         continue                                            # inner wall / leeward
@@ -265,6 +315,28 @@ for i in range(len(tower_levels) - 1):
 # whole load case.
 expect['Surf-1'] = math.pi * ((D_pile/2.0)**2 - (D_pile/2.0 - t_pile)**2)
 expect['Surf-2'] = math.pi * ((D_top/2.0)**2 - (D_top/2.0 - t_tower)**2)
+
+if HALF_MODEL:
+    # EVERY analytic area above assumes a full 2*Pi revolve, so on the half
+    # model each one is exactly halved -- including Surf-3 and the tower bands,
+    # whose "0.5 *" factors already meant "the -X half of the annulus" and now
+    # mean "the -X, +Y quarter". Without this the checker reports ratio ~0.5
+    # across the board and aborts a mesh that is in fact correct.
+    for nm in expect:
+        expect[nm] *= 0.5
+    # The two roller faces are each one wall cross-section: an annular strip of
+    # thickness t swept along the profile from mudline to hub. Approximate as
+    # the mean wall thickness times the profile length; the 5% band below is
+    # too tight for that estimate, so these are reported but NOT asserted.
+    print("  (half model: analytic areas halved; Surf-13/14 reported only)")
+    for nm in ('Surf-13', 'Surf-14'):
+        print("  %-8s actual=%9.3f  (roller face, not area-checked)"
+              % (nm, area_of.get(nm, 0.0)))
+        if area_of.get(nm, 0.0) <= 0.0:
+            raise ValueError(
+                "%s is EMPTY -- the y=0 symmetry faces were not picked, so the "
+                "roller in monopile_*_boundary.txt would bind to nothing and "
+                "the model would be unrestrained out of plane." % nm)
 
 print("--- surface coverage (actual vs analytic) ---")
 bad = 0
