@@ -14,20 +14,22 @@ end
 subsection Runtime
   # Time step
   set Adaptive timestep = JonasCycleJump
-  set Adaptive timestep parameters = 0 1 11250.0 2 1 1
-  set Max No of timesteps = 80000000
+  # Slot 3 is alpha_t and must match the leading entry of
+  # "Fatigue degradation parameters" in the Material subsection.
+  set Adaptive timestep parameters = 0 1 416666.7 2 1 1
+  set Max No of timesteps = 480000000
   set Timestep size = 0.25
   set Timestep size to switch to = 0.25
   set Switch timestep after steps = 1
 
-  set Maximum crack length = 0.24
+  set Maximum crack length = 0.028
 
   # Solver
   set Use Direct Inner Solver = true
   set Use Direct Inner Solver type = Amesos_Mumps
   set Allow skip first Newton iteration = false
-  set Newton lower bound = 1e-4
-  set Newton maximum steps = 50
+  set Newton lower bound = 5e-4
+  set Newton maximum steps = 30
   set Upper Newton rho = 0.999
   set Maximum number of adjustment steps of Newton solution = 10
 
@@ -41,8 +43,8 @@ subsection Runtime
   # Phase field scheme
   set Use monolithic = false
   set Use multipass staggered = true
-  set Maximum number of multipass steps = 100
-  set Residual tolerance of multipass = 1e-4
+  set Maximum number of multipass steps = 20
+  set Residual tolerance of multipass = 5e-4
   set Quit multipass if residual increasing = true
 
   # "linear" to solve K_phi * phi = r_phi
@@ -61,11 +63,18 @@ end
 subsection Material
     set Young's modulus = 210000000000
     set Poisson's ratio = 0.3
-    set Critical energy release rate = 27000
+    set Critical energy release rate = 100000
     set Phase field length scale = 0.02
     set Density (for self weight) = 7850
     set Plane state = strain
-    set Fatigue degradation = KristensenAsymptotic
+    set Fatigue degradation = CarraraLogarithmic
+    # Single place alpha_t is set: overrides the leading slot of
+    # "Fatigue degradation parameters" and supplies alpha_n to the
+    # CarraraMeanEffect increment, which otherwise falls back to the
+    # Gc/(12 l_phi) formula independently of the degradation.
+    set Fatigue alpha_t = 416666.7
+    set Fatigue degradation parameters = 416666.7 0.2
+    set Fatigue increment = CarraraMeanEffect
     set Fatigue accumulation = Jonas
 end
 
